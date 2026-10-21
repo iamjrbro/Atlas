@@ -1,0 +1,12 @@
+.git
+.env
+.env.*
+node_modules
+data
+work
+test
+docs
+screenshots
+*.pem
+*.key
+*.pfx

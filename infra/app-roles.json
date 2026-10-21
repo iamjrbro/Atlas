@@ -1,0 +1,28 @@
+{
+  "appRoles": [
+    {
+      "allowedMemberTypes": ["User"],
+      "description": "Consulta ao inventário, eventos normalizados e caminhos de acesso do próprio tenant.",
+      "displayName": "Atlas Reader",
+      "id": "b0fc4d70-5c1f-45aa-9287-45ddbf46bb01",
+      "isEnabled": true,
+      "value": "Atlas.Reader"
+    },
+    {
+      "allowedMemberTypes": ["User"],
+      "description": "Consulta às evidências brutas, exportação de eventos e verificação do ledger do próprio tenant.",
+      "displayName": "Atlas Auditor",
+      "id": "b0fc4d70-5c1f-45aa-9287-45ddbf46bb02",
+      "isEnabled": true,
+      "value": "Atlas.Auditor"
+    },
+    {
+      "allowedMemberTypes": ["User"],
+      "description": "Configuração de fontes, onboarding e coleta do próprio tenant, além das consultas e auditoria.",
+      "displayName": "Atlas Admin",
+      "id": "b0fc4d70-5c1f-45aa-9287-45ddbf46bb03",
+      "isEnabled": true,
+      "value": "Atlas.Admin"
+    }
+  ]
+}

@@ -1,0 +1,103 @@
+/* Foregrounds retain contrast on the muted panel palette. */
+:root {
+  --muted: #6f7282;
+}
+.metric-top,
+.metric-foot,
+.chart-labels,
+.chart-legend,
+.card-foot,
+.mini-row p,
+.tile p,
+.tile .meta,
+.footer {
+  color: #737083;
+}
+.eyebrow,
+.section-label,
+.divider {
+  color: #776a8b;
+}
+.hero p {
+  color: #7d6a91;
+}
+.hero .eyebrow {
+  color: #7e6598;
+}
+.demo-banner,
+.notice {
+  color: #75628f;
+}
+.notice.warning {
+  color: #8c703f;
+}
+.notice.error {
+  color: #9c5264;
+}
+th {
+  color: #767187;
+}
+td {
+  color: #746e83;
+}
+td small {
+  color: #81758e;
+}
+.pill {
+  color: #42775b;
+}
+.pill.warn {
+  color: #8b692f;
+}
+.pill.bad {
+  color: #9f4c59;
+}
+.pill.gray {
+  color: #717185;
+}
+.pill.violet {
+  color: #745395;
+}
+.definition span,
+.source-info small,
+.checkbox-line,
+.settings-card label,
+.modal label,
+.code {
+  color: #7c6b8e;
+}
+input,
+select,
+textarea {
+  color: #625971;
+}
+input::placeholder {
+  color: #8d839b;
+}
+.path .node {
+  color: #7d6599;
+}
+.graph-label {
+  fill: #7d6599;
+}
+.graph-count {
+  fill: #765791;
+}
+.empty,
+.graph-empty,
+.login-box label,
+.login-box .tiny {
+  color: #82718e;
+}
+.spacer-note {
+  margin-top: 20px;
+}
+aside {
+  overflow-y: auto;
+}
+nav {
+  flex-shrink: 0;
+}
+.sidebar-bottom {
+  padding-top: 18px;
+}

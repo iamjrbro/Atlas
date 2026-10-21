@@ -1,0 +1,16 @@
+node_modules/
+.env
+.env.*
+!.env.example
+data/
+work/
+coverage/
+*.log
+*.pem
+*.pfx
+*.p12
+*.key
+*.sqlite*
+*.zip
+*.tar.gz
+playwright-report/

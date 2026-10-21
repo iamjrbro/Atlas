@@ -1,0 +1,53 @@
+name: Atlas checks
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run check
+      - run: npm test
+      - run: npm audit --omit=dev --audit-level=high
+      - name: Parse PowerShell collectors without executing them
+        shell: pwsh
+        run: ./scripts/Test-Collectors.ps1
+  postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: atlas_test
+          POSTGRES_PASSWORD: atlas_test_fixture
+          POSTGRES_DB: atlas_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U atlas_test -d atlas_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run test:postgres
+        env:
+          TEST_DATABASE_URL: postgresql://atlas_test:atlas_test_fixture@127.0.0.1:5432/atlas_test
+  container:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build --tag atlas:ci .

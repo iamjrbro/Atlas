@@ -1,0 +1,38 @@
+# Homologação local em modo Microsoft. Preencha .env conforme docs/ONBOARDING.md.
+# Não é um perfil de produção: TLS/Key Vault/rede devem ser configurados no Azure.
+services:
+  postgres:
+    image: postgres:17-bookworm
+    environment:
+      POSTGRES_DB: atlas
+      POSTGRES_USER: atlas
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD no .env}
+    volumes:
+      - atlas_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U atlas -d atlas]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  migrate:
+    build: .
+    env_file: .env
+    environment:
+      NODE_ENV: development
+    command: [node, src/migrate.js]
+    depends_on:
+      postgres:
+        condition: service_healthy
+  atlas:
+    build: .
+    env_file: .env
+    environment:
+      NODE_ENV: development
+    ports:
+      - 127.0.0.1:3000:3000
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+volumes:
+  atlas_pg:
