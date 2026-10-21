@@ -1,4 +1,6 @@
 import { hash } from "./security.js";
+import { sourceById } from "./sources.js";
+import { intuneKey } from "./intune-sources.js";
 export const entraKey = (id) => "entra:" + String(id).toLowerCase();
 export const armKey = (id) =>
   "azure:" + String(id).toLowerCase().replace(/\/$/, "");
@@ -49,7 +51,106 @@ export function normalize(source, raw, context = {}) {
       properties: raw,
       ...d,
     });
-  if (source === "entra.users") {
+  const definition = sourceById(source);
+  if (definition?.assignment) {
+    const target = raw.target || {},
+      type = String(target["@odata.type"] || "unknown"),
+      group = target.groupId || target.entraObjectId,
+      to = group
+        ? entraKey(group)
+        : "intune-target:" + type.replace("#microsoft.graph.", "");
+    edge(
+      intuneKey(definition.family, ref),
+      to,
+      /exclusion/i.test(type) ? "excluded_from" : "assigned_to",
+      raw.intent || type.replace("#microsoft.graph.", ""),
+      raw,
+    );
+    if (target.deviceAndAppManagementAssignmentFilterId)
+      edge(
+        intuneKey(definition.family, ref),
+        intuneKey("filters", target.deviceAndAppManagementAssignmentFilterId),
+        "assignment_filter",
+        target.deviceAndAppManagementAssignmentFilterType,
+        raw,
+      );
+  } else if (definition?.detail) {
+    const parent = intuneKey(definition.family, ref);
+    resource(
+      parent + ":detail:" + (context.relation ? id : "configuration"),
+      raw.displayName ||
+        raw.name ||
+        context.relation ||
+        "Conteúdo e parâmetros",
+      "intuneSetting",
+      "Intune",
+      raw,
+      { parentKey: parent },
+    );
+  } else if (definition?.family) {
+    resource(
+      intuneKey(definition.family, id),
+      raw.displayName || raw.name,
+      /powershell|shell|remediations|attributes|scripts/i.test(
+        definition.family,
+      )
+        ? "intuneScript"
+        : definition.family === "filters"
+          ? "assignmentFilter"
+          : "devicePolicy",
+      "Intune",
+      raw,
+      { createdAt: timestamp(raw.createdDateTime) },
+    );
+  } else if (source === "entra.licenseDetails") {
+    resource(
+      "user-license:" + ref + ":" + raw.skuId,
+      raw.skuPartNumber,
+      "userLicense",
+      "Microsoft 365",
+      raw,
+      { parentKey: entraKey(ref) },
+    );
+  } else if (source === "entra.devices") {
+    resource(entraKey(id), raw.displayName, "directoryDevice", "Entra ID");
+    if (raw.deviceId)
+      edge(
+        "deviceId:" + raw.deviceId.toLowerCase(),
+        entraKey(id),
+        "alias",
+        "deviceId",
+        { deviceId: raw.deviceId },
+      );
+  } else if (source === "azure.subscriptions") {
+    resource(
+      armKey(raw.id || "/subscriptions/" + raw.subscriptionId),
+      raw.displayName,
+      "subscription",
+      "Azure",
+    );
+  } else if (source === "azure.configurations") {
+    resource(
+      armKey(id) + ":configuration",
+      raw.name || id,
+      "azureConfiguration",
+      "Azure",
+      raw,
+      { parentKey: armKey(id) },
+    );
+  } else if (source === "azure.costs") {
+    resource(
+      "cost:" + id,
+      raw.resourceId || "Cobrança sem ResourceId",
+      "costLine",
+      "Azure Costs",
+      raw,
+      {
+        parentKey: raw.resourceId
+          ? armKey(raw.resourceId)
+          : armKey("/subscriptions/" + raw.subscriptionId),
+      },
+    );
+  } else if (source === "entra.users") {
     resource(entraKey(id), raw.displayName, "user", "Entra ID", raw, {
       createdAt: timestamp(raw.createdDateTime),
     });
@@ -69,11 +170,19 @@ export function normalize(source, raw, context = {}) {
         lic.skuId,
         lic,
       );
-  } else if (source === "entra.groups")
+  } else if (source === "entra.groups") {
     resource(entraKey(id), raw.displayName, "group", "Entra ID", raw, {
       createdAt: timestamp(raw.createdDateTime),
     });
-  else if (source === "entra.memberships") {
+    for (const lic of raw.assignedLicenses || [])
+      edge(
+        entraKey(id),
+        "license:" + lic.skuId,
+        "licensed_for",
+        lic.skuId,
+        lic,
+      );
+  } else if (source === "entra.memberships") {
     const member =
       raw["@odata.type"] === "#microsoft.graph.servicePrincipal"
         ? entraKey(id)
@@ -148,11 +257,29 @@ export function normalize(source, raw, context = {}) {
       "Microsoft 365",
       raw,
     );
-  } else if (source === "intune.devices")
+  } else if (source === "intune.devices") {
     resource("device:" + id, raw.deviceName, "device", "Intune", raw, {
       createdAt: timestamp(raw.enrolledDateTime),
     });
-  else if (source === "intune.compliance" || source === "intune.configuration")
+    if (raw.azureADDeviceId)
+      edge(
+        "device:" + id,
+        "deviceId:" + raw.azureADDeviceId.toLowerCase(),
+        "alias",
+        "Entra deviceId",
+        { deviceId: raw.azureADDeviceId },
+      );
+    if (raw.userId)
+      edge(
+        "device:" + id,
+        entraKey(raw.userId),
+        "primary_user",
+        "Usuário principal",
+      );
+  } else if (
+    source === "intune.compliance" ||
+    source === "intune.configuration"
+  )
     resource(
       "intune-policy:" + id,
       raw.displayName,
@@ -201,16 +328,26 @@ export function normalize(source, raw, context = {}) {
     );
   else if (source === "azure.resources") {
     const key = armKey(id),
-      sd = raw.systemData || {};
-    resource(key, raw.name, raw.type || "azureResource", "Azure", raw, {
-      parentKey: raw.resourceGroup
-        ? armKey(
-            `/subscriptions/${raw.subscriptionId}/resourceGroups/${raw.resourceGroup}`,
-          )
-        : armKey(`/subscriptions/${raw.subscriptionId}`),
-      createdAt: timestamp(sd.createdAt),
-      createdBy: sd.createdBy || null,
-    });
+      sd = raw.systemData || {},
+      subscription = /^\/subscriptions\/[^/]+\/?$/i.test(id);
+    resource(
+      key,
+      raw.name,
+      subscription ? "subscription" : raw.type || "azureResource",
+      "Azure",
+      raw,
+      {
+        parentKey: subscription
+          ? null
+          : raw.resourceGroup
+            ? armKey(
+                `/subscriptions/${raw.subscriptionId}/resourceGroups/${raw.resourceGroup}`,
+              )
+            : armKey(`/subscriptions/${raw.subscriptionId}`),
+        createdAt: timestamp(sd.createdAt),
+        createdBy: sd.createdBy || null,
+      },
+    );
   } else if (source === "azure.rbac") {
     if ((raw.type || "").toLowerCase().endsWith("/roledefinitions"))
       resource(armKey(id), raw.properties?.roleName, "azureRole", "Azure");

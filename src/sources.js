@@ -1,3 +1,4 @@
+import { intuneSources } from "./intune-sources.js";
 const s = (id, name, service, type, permission, path, extra = {}) => ({
   id,
   name,
@@ -9,6 +10,67 @@ const s = (id, name, service, type, permission, path, extra = {}) => ({
   ...extra,
 });
 export const SOURCES = [
+  ...intuneSources,
+  s(
+    "entra.licenseDetails",
+    "Planos e estados de licenças por usuário",
+    "Entra ID",
+    "snapshot",
+    "LicenseAssignment.Read.All",
+    null,
+    {
+      fanout: "users",
+      parentPath: "users?$select=id",
+      relations: ["licenseDetails"],
+    },
+  ),
+  s(
+    "azure.configurations",
+    "Configurações ARM por recurso",
+    "Azure",
+    "snapshot",
+    "Azure Reader por recurso",
+    null,
+    {
+      provider: "arm",
+      limitation:
+        "Requer azure.resources coletado. Consulta GET na versão anunciada pelo provider. Exclui segredos, ações listKeys, plano de dados e configurações expostas apenas por sub-recursos não inventariados.",
+    },
+  ),
+  s(
+    "entra.devices",
+    "Dispositivos do diretório",
+    "Entra ID",
+    "snapshot",
+    "Device.Read.All",
+    "devices",
+  ),
+  s(
+    "azure.subscriptions",
+    "Assinaturas acessíveis do tenant",
+    "Azure",
+    "snapshot",
+    "Microsoft.Resources/subscriptions/read",
+    null,
+    {
+      provider: "arm",
+      limitation:
+        "Enumera assinaturas visíveis ao collector; assinaturas sem autorização não são descobertas. Uma lista de escopos configurada restringe a coleta.",
+    },
+  ),
+  s(
+    "azure.costs",
+    "Custos reais por recurso · mês atual",
+    "Azure",
+    "snapshot",
+    "Cost Management Reader e política de cobrança compatível",
+    null,
+    {
+      provider: "arm",
+      limitation:
+        "ActualCost do mês UTC atual até o momento da consulta. Pode haver atraso, ajustes e cobranças sem ResourceId. Não é previsão nem fatura final.",
+    },
+  ),
   s(
     "entra.users",
     "Usuários e licenças atribuídas",
@@ -23,7 +85,7 @@ export const SOURCES = [
     "Entra ID",
     "snapshot",
     "Group.Read.All",
-    "groups?$select=id,displayName,description,groupTypes,securityEnabled,mailEnabled,createdDateTime,isAssignableToRole&$top=100",
+    "groups?$select=id,displayName,description,groupTypes,securityEnabled,mailEnabled,createdDateTime,isAssignableToRole,assignedLicenses,membershipRule,membershipRuleProcessingState,licenseProcessingState&$top=100",
   ),
   s(
     "entra.memberships",

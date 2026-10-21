@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { costRows } from "./costs.js";
 import { ensureTenant, ingest } from "./store.js";
 export const DEMO_TENANTS = [
   { id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", name: "Aurora Labs" },
@@ -315,6 +316,113 @@ export async function seedDemo(pool) {
           },
         ],
       };
+    const deviceGroup = "88888888-8888-4888-8888-888888888888";
+    records["entra.groups"].push({
+      id: deviceGroup,
+      displayName: "Windows · Dispositivos corporativos",
+      securityEnabled: true,
+      groupTypes: [],
+      membershipRule: '(device.deviceOSType -eq "Windows")',
+    });
+    records["azure.subscriptions"] = [
+      {
+        id: "/subscriptions/" + sub,
+        subscriptionId: sub,
+        displayName: "Azure · Produção",
+        tenantId: tenant.id,
+        state: "Enabled",
+        subscriptionPolicies: { spendingLimit: "Off" },
+      },
+    ];
+    records["azure.configurations"] = [
+      {
+        id: vm,
+        name: "vm-api-prod",
+        type: "Microsoft.Compute/virtualMachines",
+        configurationStatus: "observed",
+        collectedApiVersion: "2024-07-01",
+        properties: {
+          hardwareProfile: { vmSize: "Standard_D2s_v5" },
+          osProfile: {
+            computerName: "vm-api-prod",
+            adminUsername: "atlas-admin",
+          },
+          storageProfile: {
+            osDisk: { managedDisk: { storageAccountType: "Premium_LRS" } },
+          },
+        },
+      },
+    ];
+    records["intune.catalog"] = [
+      {
+        id: "catalog-001",
+        name: "Windows · Defender e BitLocker",
+        platforms: "windows10",
+        technologies: "mdm",
+        settingCount: 2,
+        templateReference: { templateFamily: "endpointSecurityDiskEncryption" },
+      },
+    ];
+    records["intune.powershell"] = [
+      {
+        id: "ps-001",
+        displayName: "Inventário de agentes corporativos",
+        fileName: "inventory.ps1",
+        runAsAccount: "system",
+        enforceSignatureCheck: true,
+      },
+    ];
+    records["intune.remediations"] = [
+      {
+        id: "health-001",
+        displayName: "Verificar criptografia",
+        runAsAccount: "system",
+        description: "Fixture: detecção e remediação",
+      },
+    ];
+    records["intune.filters"] = [
+      {
+        id: "filter-001",
+        displayName: "Apenas máquinas corporativas",
+        platform: "windows10AndLater",
+        rule: '(device.deviceOwnership -eq "Corporate")',
+      },
+    ];
+    const period = {
+        from: new Date(
+          new Date(now).getUTCFullYear(),
+          new Date(now).getUTCMonth(),
+          1,
+        ).toISOString(),
+        to: new Date(now).toISOString(),
+      },
+      day = Number(
+        new Date(now).toISOString().slice(0, 10).replaceAll("-", ""),
+      );
+    records["azure.costs"] = costRows(
+      {
+        properties: {
+          columns: [
+            { name: "Currency" },
+            { name: "PreTaxCost" },
+            { name: "ResourceId" },
+            { name: "UsageDate" },
+          ],
+          rows: [
+            ["BRL", 312.48, vm, day],
+            [
+              "BRL",
+              42.15,
+              rg + "/providers/Microsoft.Storage/storageAccounts/atlasprod",
+              day,
+            ],
+            ["BRL", 8.99, "", day],
+          ],
+        },
+      },
+      sub,
+      period,
+    );
     for (let i = 0; i < 70; i++) {
       const at = new Date(now - i * 2.3 * 3600000).toISOString();
       const which = i % 4;
@@ -400,6 +508,116 @@ export async function seedDemo(pool) {
         "INSERT INTO coverage(tenant_id,source,status,last_success,last_attempt,records,detail) VALUES($1,$2,'success',now(),now(),$3,'{\"fixture\":true}') ON CONFLICT DO NOTHING",
         [tenant.id, source, items.length],
       );
+    }
+    const extras = [
+      [
+        "intune.catalog.assignments",
+        {
+          id: "a1",
+          target: {
+            "@odata.type": "#microsoft.graph.groupAssignmentTarget",
+            groupId: deviceGroup,
+            deviceAndAppManagementAssignmentFilterId: "filter-001",
+            deviceAndAppManagementAssignmentFilterType: "include",
+          },
+        },
+        { parent: "catalog-001", relation: "assignments" },
+      ],
+      [
+        "intune.catalog.assignments",
+        {
+          id: "a2",
+          target: {
+            "@odata.type": "#microsoft.graph.exclusionGroupAssignmentTarget",
+            groupId: group,
+          },
+        },
+        { parent: "catalog-001", relation: "assignments" },
+      ],
+      [
+        "intune.catalog.details",
+        {
+          id: "setting-001",
+          settingInstance: {
+            settingDefinitionId:
+              "device_vendor_msft_bitlocker_requiredeviceencryption",
+            choiceSettingValue: { value: "required" },
+          },
+        },
+        { parent: "catalog-001", relation: "settings" },
+      ],
+      [
+        "intune.powershell.details",
+        {
+          id: "ps-001",
+          displayName: "inventory.ps1",
+          scriptContent: Buffer.from(
+            "# Fixture fictícia\nGet-Service | Select-Object Name, Status",
+          ).toString("base64"),
+          runAsAccount: "system",
+        },
+        { parent: "ps-001", relation: "" },
+      ],
+      [
+        "intune.powershell.assignments",
+        {
+          id: "ps-a1",
+          target: {
+            "@odata.type": "#microsoft.graph.groupAssignmentTarget",
+            groupId: deviceGroup,
+          },
+        },
+        { parent: "ps-001", relation: "assignments" },
+      ],
+      [
+        "entra.memberships",
+        {
+          id: "directory-device-001",
+          displayName: "DESKTOP-ATLAS-01",
+          "@odata.type": "#microsoft.graph.device",
+        },
+        { parent: deviceGroup, relation: "members" },
+      ],
+    ];
+    records["entra.devices"] = [
+      {
+        id: "directory-device-001",
+        deviceId: "entra-device-001",
+        displayName: "DESKTOP-ATLAS-01",
+        operatingSystem: "Windows",
+        accountEnabled: true,
+      },
+    ];
+    for (const [source, record, context] of extras) {
+      const runId = randomUUID();
+      await pool.query(
+        "INSERT INTO runs(id,tenant_id,source,status) VALUES($1,$2,$3,'success')",
+        [runId, tenant.id, source],
+      );
+      await ingest(pool, {
+        tenant: tenant.id,
+        source,
+        runId,
+        records: [{ record, context }],
+      });
+      await pool.query(
+        "INSERT INTO coverage(tenant_id,source,status,last_success,last_attempt,records,detail) VALUES($1,$2,'success',now(),now(),1,'{\"fixture\":true}') ON CONFLICT(tenant_id,source) DO UPDATE SET records=coverage.records+1",
+        [tenant.id, source],
+      );
+    }
+    // The additional directory device is a normal inventory record.
+    {
+      const runId = randomUUID();
+      await pool.query(
+        "INSERT INTO runs(id,tenant_id,source,status) VALUES($1,$2,'entra.devices','success')",
+        [runId, tenant.id],
+      );
+      await ingest(pool, {
+        tenant: tenant.id,
+        source: "entra.devices",
+        runId,
+        records: records["entra.devices"].map((record) => ({ record })),
+      });
     }
     const id = randomUUID();
     await pool.query(

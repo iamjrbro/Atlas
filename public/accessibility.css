@@ -101,3 +101,42 @@ nav {
 .sidebar-bottom {
   padding-top: 18px;
 }
+
+.resource-origin {
+  margin: 16px 0;
+}
+.modal-body summary {
+  cursor: pointer;
+  color: #6850a0;
+  padding: 10px 0;
+  font-weight: 600;
+}
+.modal-body .mini-row {
+  justify-content: space-between;
+}
+.sidebar nav {
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.cost-total {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding: 24px;
+}
+.cost-total small {
+  display: block;
+  margin-top: 8px;
+}
+.cost-total strong {
+  font-size: 24px;
+  color: #4d386f;
+}
+.cost-table td:first-child {
+  max-width: 400px;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}

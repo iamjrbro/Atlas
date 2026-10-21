@@ -244,9 +244,48 @@ export function createApp(config, pool) {
         pool,
         req.actor.tenant,
         z.string().min(1).max(4000).parse(req.query.key),
+        z.coerce
+          .number()
+          .int()
+          .min(0)
+          .max(1000000)
+          .default(0)
+          .parse(req.query.offset),
+        z.coerce
+          .number()
+          .int()
+          .min(0)
+          .max(1000000)
+          .default(0)
+          .parse(req.query.childOffset),
       ),
     ),
   );
+  api.get("/costs", async (req, res) => {
+    const p = pageSchema.parse(req.query),
+      tenant = req.actor.tenant;
+    const totals = (
+      await pool.query(
+        "SELECT properties->>'subscriptionId' AS subscription_id,properties->>'currency' AS currency,properties->>'periodStart' AS period_start,max(properties->>'periodEnd') AS period_end,sum((properties->>'amount')::numeric)::text AS amount,count(*)::int AS lines FROM resources WHERE tenant_id=$1 AND active AND kind='costLine' GROUP BY properties->>'subscriptionId',properties->>'currency',properties->>'periodStart' ORDER BY subscription_id,currency,period_start",
+        [tenant],
+      )
+    ).rows;
+    const rows = (
+      await pool.query(
+        "SELECT c.key,c.name,c.properties,c.parent_key,c.last_seen,c.evidence_id,r.name AS resource_name,r.key AS resource_key FROM resources c LEFT JOIN resources r ON r.tenant_id=c.tenant_id AND r.key=c.parent_key AND r.active WHERE c.tenant_id=$1 AND c.active AND c.kind='costLine' AND (c.name ILIKE $2 OR c.properties->>'subscriptionId' ILIKE $2) ORDER BY c.properties->>'usageDate' DESC,c.key LIMIT $3 OFFSET $4",
+        [tenant, "%" + p.q + "%", p.limit + 1, p.offset],
+      )
+    ).rows;
+    res.json({
+      totals,
+      items: rows.slice(0, p.limit),
+      hasMore: rows.length > p.limit,
+      offset: p.offset,
+      coverage: (await coverage(pool, tenant)).find(
+        (s) => s.id === "azure.costs",
+      ),
+    });
+  });
   api.get("/access", async (req, res) =>
     res.json(
       await accessPaths(

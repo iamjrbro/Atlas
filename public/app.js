@@ -93,6 +93,11 @@ const menu = () => [
   ["overview", "Visão geral"],
   ["events", "Linha do tempo"],
   ["inventory", "Inventário de recursos"],
+  ["users", "Usuários"],
+  ["groups", "Grupos e membros"],
+  ["intune", "Intune · políticas e scripts"],
+  ["azure", "Azure · assinaturas e recursos"],
+  ["costs", "Custos Azure"],
   ["permissions", "Caminhos de acesso"],
   ["licenses", "Licenças e capacidade"],
   ["findings", "Pontos de atenção"],
@@ -176,6 +181,12 @@ async function load(page = state.page, { preserve = false } = {}) {
       from: "",
       to: "",
     });
+  if (!preserve) {
+    if (page === "users") state.kind = "user";
+    if (page === "groups") state.kind = "group";
+    if (page === "intune") state.service = "Intune";
+    if (page === "azure") state.service = "Azure";
+  }
   const id = ++generation;
   shell();
   try {
@@ -190,7 +201,18 @@ async function load(page = state.page, { preserve = false } = {}) {
       cache.recent = events.items;
       cache.findings = findings.items;
     }
-    if (["inventory", "events"].includes(page)) cache.list = await getList();
+    if (
+      [
+        "inventory",
+        "events",
+        "users",
+        "groups",
+        "intune",
+        "azure",
+        "costs",
+      ].includes(page)
+    )
+      cache.list = await getList();
     if (page === "licenses")
       cache.licenses = (await api("/resources?kind=license&limit=200")).items;
     if (page === "findings") cache.findings = (await api("/findings")).items;
@@ -339,7 +361,7 @@ function filters(type) {
           .join(
             "",
           )}</select><input type="date" id="from-filter" aria-label="A partir de" value="${state.from.slice(0, 10)}"><input type="date" id="to-filter" aria-label="Até" value="${state.to.slice(0, 10)}">`
-      : `<select id="service-filter" aria-label="Serviço"><option value="">Todos os serviços</option>${services.map((s) => `<option ${state.service === s ? "selected" : ""}>${s}</option>`).join("")}</select><select id="kind-filter" aria-label="Tipo"><option value="">Todos os tipos</option>${["user", "group", "application", "servicePrincipal", "site", "team", "device", "license", "mailbox", "directoryRole", "azureRole", "conditionalAccess"].map((k) => `<option ${state.kind === k ? "selected" : ""}>${k}</option>`).join("")}</select>`
+      : `<select id="service-filter" aria-label="Serviço"><option value="">Todos os serviços</option>${services.map((s) => `<option ${state.service === s ? "selected" : ""}>${s}</option>`).join("")}</select><select id="kind-filter" aria-label="Tipo"><option value="">Todos os tipos</option>${["user", "group", "application", "servicePrincipal", "site", "team", "device", "license", "mailbox", "directoryRole", "azureRole", "conditionalAccess", "directoryDevice", "devicePolicy", "intuneScript", "intuneSetting", "assignmentFilter", "managedApp", "subscription", "azureConfiguration"].map((k) => `<option ${state.kind === k ? "selected" : ""}>${k}</option>`).join("")}</select>`
   }</div>`;
 }
 function pagination() {
@@ -351,7 +373,12 @@ function resourceTable(items) {
 function inventory() {
   return (
     title(
-      "Inventário de recursos",
+      {
+        users: "Usuários · licenças e grupos",
+        groups: "Grupos · usuários e dispositivos",
+        intune: "Intune · políticas, scripts e atribuições",
+        azure: "Azure · assinaturas e configurações",
+      }[state.page] || "Inventário de recursos",
       "Do usuário à infraestrutura. Criação, propriedades e histórico em um só lugar.",
     ) +
     `<div class="card">${filters("inventory")}<div id="list-results">${resourceTable(cache.list.items)}${pagination()}</div></div>`
@@ -376,7 +403,14 @@ async function getList() {
   for (const key of ["service", "kind", "source", "category", "from", "to"])
     if (state[key]) params.set(key, state[key]);
   return api(
-    "/" + (state.page === "events" ? "events" : "resources") + "?" + params,
+    "/" +
+      (state.page === "events"
+        ? "events"
+        : state.page === "costs"
+          ? "costs"
+          : "resources") +
+      "?" +
+      params,
   );
 }
 async function refreshList() {
@@ -388,7 +422,9 @@ async function refreshList() {
     $("#list-results").innerHTML =
       (state.page === "events"
         ? eventsTable(result.items)
-        : resourceTable(result.items)) + pagination();
+        : state.page === "costs"
+          ? costTable(result.items)
+          : resourceTable(result.items)) + pagination();
   } catch (err) {
     toast(err.message);
   }
@@ -495,6 +531,11 @@ const views = {
   overview,
   events,
   inventory,
+  users: inventory,
+  groups: inventory,
+  intune: inventory,
+  azure: inventory,
+  costs,
   permissions,
   licenses,
   findings,
@@ -514,13 +555,20 @@ function closeModal() {
   $("#modal-root").innerHTML = "";
   priorFocus?.focus();
 }
-async function resourceDetail(key) {
-  const result = await api("/resource?key=" + encodeURIComponent(key));
+async function resourceDetail(key, offset = 0, childOffset = 0) {
+  const result = await api(
+    "/resource?key=" +
+      encodeURIComponent(key) +
+      "&offset=" +
+      offset +
+      "&childOffset=" +
+      childOffset,
+  );
   cache.detail = result;
   const r = result.resource;
   modal(
     r.name,
-    `${pill(r.service, "violet")} ${pill(r.kind)}${[
+    `${pill(r.service, "violet")} ${pill(r.kind)}<details class="resource-origin"><summary>Origem, identificação e datas</summary>${[
       ["Identificador", r.key],
       ["Criado em", fmt(r.created_at)],
       ["Criado por", r.created_by || "Não informado pela fonte"],
@@ -534,7 +582,7 @@ async function resourceDetail(key) {
       )
       .join(
         "",
-      )}<div class="divider">PERMISSÕES E RELAÇÕES OBSERVADAS</div>${result.edges.map((p) => `<div class="path-card"><div class="path"><span class="node">${esc(p.from_key)}</span><span class="arrow">→</span><span class="node">${esc(p.roleName || p.role || p.relation)}</span><span class="arrow">→</span><span class="node">${esc(p.targetName || p.to_key)}</span></div><p>${esc(p.relation)} ${p.scope ? "· Escopo " + esc(p.scope) : ""}</p>${isAuditor() ? btn("Ver evidência ↗", "evidence", "ghost small", `data-id="${p.evidence_id}"`) : ""}</div>`).join("") || "<p>Nenhuma relação coletada para este recurso.</p>"}<div class="notice warning">${result.limitations.map(esc).join("<br>")}</div><div class="divider">PROPRIEDADES OBSERVADAS</div><pre>${esc(JSON.stringify(r.properties, null, 2))}</pre><div class="divider">HISTÓRICO DE EVIDÊNCIAS</div>${result.versions.map((v) => `<div class="mini-row"><span>${esc(fmt(v.observed_at))}</span><span class="code">${esc(v.sha256.slice(0, 12))}…</span>${isAuditor() ? btn("Evidência", "evidence", "ghost small", `data-id="${v.evidence_id}"`) : ""}</div>`).join("")}`,
+      )}</details>${detailExtras(result)}<div class="divider">GRUPOS, MEMBROS, LICENÇAS E ATRIBUIÇÕES</div>${result.edges.map((p) => `<div class="path-card"><div class="path"><span class="node">${p.fromCollected ? resourceLink(p.from_key, p.fromName) : esc(p.fromName)}</span><span class="arrow">→</span><span class="node">${esc({ assigned_to: "Incluído", excluded_from: "Excluído", assignment_filter: "Filtro · " + p.role }[p.relation] || p.roleName || p.role || p.relation)}</span><span class="arrow">→</span><span class="node">${p.toCollected ? resourceLink(p.to_key, p.toName) : esc(p.toName)}</span></div><p>${esc({ member_of: "Membro do grupo", owns: "Proprietário", licensed_for: "Licença atribuída", assigned_to: "Atribuição incluída", excluded_from: "Atribuição excluída", assignment_filter: "Filtro de atribuição" }[p.relation] || p.relation)} ${p.scope ? "· Escopo " + esc(p.scope) : ""}</p>${p.properties.target ? `<details><summary>Alvo e filtro declarados pela Microsoft</summary><pre>${esc(JSON.stringify(p.properties.target, null, 2))}</pre></details>` : ""}${isAuditor() ? btn("Ver evidência ↗", "evidence", "ghost small", `data-id="${p.evidence_id}"`) : ""}</div>`).join("") || "<p>Nenhuma relação coletada para este recurso.</p>"}${detailPagination(result)}<div class="notice warning">${result.limitations.map(esc).join("<br>")}</div><div class="divider">PROPRIEDADES OBSERVADAS</div><pre>${esc(JSON.stringify(r.properties, null, 2))}</pre><div class="divider">HISTÓRICO DE EVIDÊNCIAS</div>${result.versions.map((v) => `<div class="mini-row"><span>${esc(fmt(v.observed_at))}</span><span class="code">${esc(v.sha256.slice(0, 12))}…</span>${isAuditor() ? btn("Evidência", "evidence", "ghost small", `data-id="${v.evidence_id}"`) : ""}</div>`).join("")}`,
     isAuditor()
       ? btn(
           "Abrir evidência original",
@@ -545,6 +593,51 @@ async function resourceDetail(key) {
       : btn("Fechar", "close"),
   );
 }
+
+const money = (amount, currency) =>
+  Number(amount).toLocaleString("pt-BR", { style: "currency", currency });
+const resourceLink = (key, name) =>
+  btn(esc(name), "resource", "ghost small", `data-key="${esc(key)}"`);
+function detailPagination(d) {
+  return `<div class="pagination"><span>Relações ${d.relationshipsOffset + 1}–${d.relationshipsOffset + d.edges.length}</span><div>${btn("← Anterior", "detail-page", "small", `data-offset="${Math.max(0, d.relationshipsOffset - 50)}" data-child-offset="${d.childrenOffset}" ${d.relationshipsOffset ? "" : "disabled"}`)}${btn("Próximas →", "detail-page", "small", `data-offset="${d.relationshipsOffset + 50}" data-child-offset="${d.childrenOffset}" ${d.relationshipsHasMore ? "" : "disabled"}`)}</div></div>`;
+}
+function detailExtras(d) {
+  const r = d.resource,
+    props = r.properties;
+  const scriptFields = [
+    "scriptContent",
+    "detectionScriptContent",
+    "remediationScriptContent",
+  ].filter((k) => typeof props[k] === "string");
+  const scripts = scriptFields
+    .map((k) => {
+      try {
+        const bytes = Uint8Array.from(atob(props[k]), (c) => c.charCodeAt(0));
+        return `<div class="divider">${esc(k)} · LEITURA</div><pre>${esc(new TextDecoder().decode(bytes))}</pre>`;
+      } catch {
+        return `<p>${esc(k)}: conteúdo não decodificado; consulte o JSON original.</p>`;
+      }
+    })
+    .join("");
+  return `${scripts}${r.kind === "user" ? `<div class="divider">IDENTIDADE E LICENCIAMENTO</div><p>${esc(props.userPrincipalName)} · ${esc(props.department)} · ${props.accountEnabled ? "Conta habilitada" : "Conta desabilitada ou estado não informado"}</p><p>Licenças atribuídas: ${num(props.assignedLicenses?.length)} · Veja planos desabilitados e origem na configuração observada.</p>${d.related.map((l) => `<div class="path-card">${resourceLink(l.key, l.name)}<pre>${esc(JSON.stringify({ servicePlans: l.properties.servicePlans, assignment: (props.assignedLicenses || []).find((a) => "license:" + a.skuId === l.key), assignmentStates: props.licenseAssignmentStates }, null, 2))}</pre></div>`).join("")}` : ""}
+    ${d.costs.length ? `<div class="divider">CUSTOS REAIS OBSERVADOS</div>${d.costs.map((c) => `<div class="definition"><span>${esc(c.period_start.slice(0, 10))} até ${esc(fmt(c.period_end))}</span><b>${esc(money(c.amount, c.currency))}</b></div>`).join("")}<p>Valores podem sofrer ajustes e atraso de ingestão. Consulte a cobertura de azure.costs.</p>` : r.service === "Azure" ? `<p>Custos deste recurso: nenhum valor coletado. Confira a cobertura de azure.costs.</p>` : ""}
+    ${d.children.length ? `<div class="divider">RECURSOS, CONFIGURAÇÕES E CONTEÚDO</div>${d.children.map((c) => `<div class="mini-row">${resourceLink(c.key, c.name)}${pill(c.kind)}</div>`).join("")}` : ""}
+    ${d.childrenOffset || d.childrenHasMore ? `<div class="pagination">${btn("← Configurações anteriores", "detail-page", "small", `data-offset="${d.relationshipsOffset}" data-child-offset="${Math.max(0, d.childrenOffset - 50)}" ${d.childrenOffset ? "" : "disabled"}`)}${btn("Próximas configurações →", "detail-page", "small", `data-offset="${d.relationshipsOffset}" data-child-offset="${d.childrenOffset + 50}" ${d.childrenHasMore ? "" : "disabled"}`)}</div>` : ""}`;
+}
+function costTable(items) {
+  return `<div class="table-wrap"><table class="cost-table"><thead><tr><th>RECURSO / ASSINATURA</th><th>DIA UTC</th><th>CUSTO REAL</th><th>EVIDÊNCIA</th></tr></thead><tbody>${items.map((c) => `<tr><td>${c.properties.resourceId ? (c.resource_key ? resourceLink(c.resource_key, c.resource_name) : esc(c.name.split("/").at(-1))) : "Cobrança sem ResourceId · " + (c.resource_key ? resourceLink(c.resource_key, c.resource_name) : esc(c.properties.subscriptionId))}<small>${esc(c.properties.subscriptionId)}</small></td><td>${esc(c.properties.usageDate.replace(/^(\d{4})(\d{2})(\d{2})$/, "$3/$2/$1"))}</td><td>${esc(money(c.properties.amount, c.properties.currency))}</td><td>${resourceLink(c.key, "Detalhes")}</td></tr>`).join("") || '<tr><td colspan="4">Nenhum custo coletado. Ausência de dados não significa custo zero.</td></tr>'}</tbody></table></div>`;
+}
+function costs() {
+  const d = cache.list;
+  return (
+    title(
+      "Custos Azure",
+      "Custo real por recurso e assinatura, com moeda e período explícitos.",
+    ) +
+    `<div class="notice">${pill(d.coverage.status)} · ${esc(d.coverage.limitation)} Último sucesso: ${esc(fmt(d.coverage.last_success))}. Uma coleta parcial pode misturar observações de momentos distintos; confira o horário de cada registro.</div><div class="card">${d.totals.map((t) => `<div class="cost-total"><div><b>Assinatura · ${esc(t.subscription_id)}</b><small>${esc(t.period_start.slice(0, 10))} até ${esc(fmt(t.period_end))}</small></div><strong>${esc(money(t.amount, t.currency))}</strong></div>`).join("") || "<p>Totais indisponíveis sem coleta de custos.</p>"}</div><div class="card"><div class="toolbar"><input id="query" aria-label="Buscar custos por recurso ou assinatura" placeholder="Buscar recurso ou assinatura" value="${esc(state.q)}"></div><div id="list-results">${costTable(d.items)}${pagination()}</div></div>`
+  );
+}
+
 async function evidence(id) {
   const v = await api("/evidence/" + id);
   cache.evidence = v;
@@ -629,7 +722,7 @@ function sourceDetail(id) {
       )}<div class="notice">${esc(s.limitation || "Cobertura limitada aos objetos e eventos disponibilizados pela API e pelas permissões configuradas.")}${s.license ? "<br>" + esc(s.license) : ""}</div>`,
     isAdmin() && s.provider !== "bridge" && s.enabled
       ? btn("Solicitar coleta", "collect", "primary", `data-id="${s.id}"`) +
-          (s.provider === "graph"
+          (s.provider === "graph" || s.id === "azure.configurations"
             ? btn("Reiniciar cursor", "reset-source", "", `data-id="${s.id}"`)
             : "")
       : btn("Fechar", "close"),
@@ -694,6 +787,12 @@ document.addEventListener("click", async (ev) => {
     }
     if (a === "event") eventDetail(b.dataset.id);
     if (a === "resource") await resourceDetail(b.dataset.key);
+    if (a === "detail-page")
+      await resourceDetail(
+        cache.detail.resource.key,
+        Number(b.dataset.offset),
+        Number(b.dataset.childOffset),
+      );
     if (a === "evidence") await evidence(b.dataset.id);
     if (a === "finding") findingDetail(b.dataset.id);
     if (a === "source") sourceDetail(b.dataset.id);

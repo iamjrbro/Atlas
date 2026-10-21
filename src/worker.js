@@ -33,9 +33,12 @@ export async function processOne(pool, config, provider) {
     outcome =
       error.providerStatus === 401 || error.providerStatus === 403
         ? "forbidden"
-        : ["COLLECTION_LIMIT", "QUERY_TRUNCATED", "LOG_QUERY_PARTIAL"].includes(
-              error.code,
-            )
+        : [
+              "COLLECTION_LIMIT",
+              "QUERY_TRUNCATED",
+              "LOG_QUERY_PARTIAL",
+              "AZURE_CONFIGURATION_GAPS",
+            ].includes(error.code)
           ? "partial"
           : [
                 "M365_SUBSCRIPTION_REQUIRED",
@@ -43,6 +46,7 @@ export async function processOne(pool, config, provider) {
                 "NO_AZURE_SCOPE",
                 "BRIDGE_REQUIRED",
                 "SOURCE_DISABLED",
+                "AZURE_INVENTORY_REQUIRED",
               ].includes(error.code)
             ? "needs_setup"
             : error.code === "RETENTION_GAP"

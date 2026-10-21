@@ -4,6 +4,7 @@ import {
   timingSafeEqual,
   randomBytes,
 } from "node:crypto";
+import { intuneFamilies } from "./intune-sources.js";
 export class AppError extends Error {
   constructor(status, code, message = code) {
     super(message);
@@ -95,12 +96,26 @@ export function safeUrl(value, kind, tenant) {
   if (!bases[kind]) throw new AppError(500, "INVALID_PROVIDER");
   const base = new URL(bases[kind]),
     url = new URL(value, base);
+  const intuneBeta =
+    kind === "graph" &&
+    url.pathname.startsWith("/beta/") &&
+    [
+      ...intuneFamilies.map((x) => x[2]),
+      "deviceManagement/assignmentFilters",
+      "deviceManagement/deviceCompliancePolicies",
+      "deviceManagement/deviceConfigurations",
+      "deviceAppManagement/mobileApps",
+    ].some(
+      (path) =>
+        url.pathname === "/beta/" + path ||
+        url.pathname.startsWith("/beta/" + path + "/"),
+    );
   if (
     url.origin !== base.origin ||
     url.username ||
     url.password ||
     url.hash ||
-    !url.pathname.startsWith(base.pathname)
+    !(url.pathname.startsWith(base.pathname) || intuneBeta)
   )
     throw new AppError(
       400,

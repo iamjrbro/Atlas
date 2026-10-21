@@ -64,7 +64,10 @@ export async function createProvider(
       (method === "POST" &&
         !(
           (kind === "arm" &&
-            url.pathname === "/providers/Microsoft.ResourceGraph/resources") ||
+            (url.pathname === "/providers/Microsoft.ResourceGraph/resources" ||
+              /^\/subscriptions\/[0-9a-f-]{36}\/providers\/Microsoft\.CostManagement\/query$/i.test(
+                url.pathname,
+              ))) ||
           (kind === "logs" &&
             /^\/v1\/workspaces\/[0-9a-f-]+\/query$/.test(url.pathname))
         ))
@@ -112,7 +115,10 @@ export async function createProvider(
       last.correlation = id;
       if (![429, 500, 502, 503, 504].includes(status) || attempt === 3)
         throw last;
-      const ra = response.headers.get("retry-after"),
+      const ra =
+          response.headers.get(
+            "x-ms-ratelimit-microsoft.consumption-retry-after",
+          ) || response.headers.get("retry-after"),
         seconds = Number(ra),
         delay =
           Number.isFinite(seconds) && seconds > 0

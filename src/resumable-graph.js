@@ -17,6 +17,8 @@ export async function collectGraph(
     definition: source.path,
     fanout: source.fanout,
     relations: source.relations,
+    beta: source.beta,
+    parentPath: source.parentPath,
     settings: tenant.settings,
   });
   let saved = (
@@ -28,13 +30,14 @@ export async function collectGraph(
   if (saved?.fingerprint !== fingerprint || run.detail.backfillDays)
     saved = null;
   const parentPath =
-    source.fanout === "teams"
+    source.parentPath ||
+    (source.fanout === "teams"
       ? "groups?$filter=resourceProvisioningOptions/Any(x:x eq 'Team')&$select=id"
       : source.fanout === "groups"
         ? "groups?$select=id"
         : source.fanout === "servicePrincipals"
           ? "servicePrincipals?$select=id"
-          : "sites/getAllSites";
+          : "sites/getAllSites");
   let initial = source.path;
   if (source.type === "events") {
     const field =
@@ -114,16 +117,23 @@ export async function collectGraph(
             : source.fanout === "sites/getAllSites"
               ? "sites"
               : source.fanout;
-      path = state.next || `${root}/${encodeURIComponent(parent)}/${relation}`;
+      path =
+        state.next ||
+        `${root}/${encodeURIComponent(parent)}${relation ? "/" + relation : ""}`;
       context = { parent, relation };
     }
     const step = state.stage + ":" + path;
     if (visited.has(step)) throw new AppError(502, "PAGINATION_LOOP");
     visited.add(step);
+    if (source.beta && !/^https?:/i.test(path) && !path.startsWith("/beta/"))
+      path = "/beta/" + path;
     const { data } = await provider.call(tenant.id, "graph", path);
     requests++;
-    if (!Array.isArray(data.value)) throw new AppError(502, "PROVIDER_SHAPE");
-    const items = data.value,
+    const singleton =
+      source.detail && state.stage === "children" && context.relation === "";
+    if (!singleton && !Array.isArray(data.value))
+      throw new AppError(502, "PROVIDER_SHAPE");
+    const items = singleton ? [data] : data.value,
       next = data["@odata.nextLink"] || null;
     if (items.length + count > config.maxRecords) {
       await persist();

@@ -2,6 +2,8 @@ import { AppError } from "./security.js";
 import { ingest, finishSnapshot } from "./store.js";
 import { sourceById } from "./sources.js";
 import { collectGraph } from "./resumable-graph.js";
+import { collectCosts } from "./costs.js";
+import { collectConfigurations } from "./azure-configurations.js";
 const iso = (d) => new Date(d).toISOString();
 export async function collect(run, tenant, config, provider, pool) {
   const source = sourceById(run.source);
@@ -137,16 +139,41 @@ export async function collect(run, tenant, config, provider, pool) {
         )
           if (
             !tenant.settings.subscriptions?.length ||
-            tenant.settings.subscriptions.includes(sub.subscriptionId)
-          )
+            tenant.settings.subscriptions.some(
+              (id) => id.toLowerCase() === sub.subscriptionId.toLowerCase(),
+            )
+          ) {
             subscriptions.push(sub.subscriptionId);
+            if (source.id === "azure.subscriptions") await emit([sub]);
+          }
     if (!subscriptions.length)
       throw new AppError(
         409,
         "NO_AZURE_SCOPE",
         "Nenhuma assinatura Azure acessível no escopo configurado.",
       );
-    if (source.query) {
+    if (source.id === "azure.configurations") {
+      count = await collectConfigurations(
+        run,
+        tenant,
+        subscriptions,
+        config,
+        provider,
+        pool,
+      );
+      return { count, start, end };
+    } else if (source.id === "azure.subscriptions") {
+      // Subscription properties were persisted during discovery.
+    } else if (source.id === "azure.costs") {
+      await collectCosts({
+        tenant: tenant.id,
+        subscriptions,
+        provider,
+        config,
+        emit,
+        heartbeat,
+      });
+    } else if (source.query) {
       for (let offset = 0; offset < subscriptions.length; offset += 50) {
         let skip;
         do {

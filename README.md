@@ -4,7 +4,7 @@
 
 O Atlas conecta os dados que normalmente ficam distribuídos entre Entra, Azure, Microsoft 365, Intune, Teams, SharePoint e Exchange. Investigue **quem fez o quê, quando e em qual recurso**, explore de onde vem uma permissão e consulte a evidência que sustenta cada informação.
 
-**Status: v0.2 — implementação para piloto e homologação.** Os conectores têm código real e testes com respostas controladas; ainda precisam de validação end-to-end em tenants e infraestrutura Microsoft reais. A demonstração usa dados fictícios, separados de qualquer ambiente real.
+**Status: v0.3 — implementação para piloto e homologação.** Os conectores têm código real e testes com respostas controladas; ainda precisam de validação end-to-end em tenants e infraestrutura Microsoft reais. A demonstração usa dados fictícios, separados de qualquer ambiente real.
 
 ![Atlas — demonstração com dados fictícios](docs/images/dashboard.png)
 
@@ -29,15 +29,17 @@ Para integrar seu tenant: [guia de onboarding](docs/ONBOARDING.md). Para hospeda
 | ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Identidades e aplicações | Usuários, grupos, membros, proprietários, aplicações, service principals, consentimentos, app roles e papéis Entra                                                            |
 | Mudanças e acessos       | Directory Audit, sign-ins, Intune Audit, Azure Activity Log e quatro feeds Management Activity                                                                                |
-| Azure                    | Inventário Resource Graph, containers/hierarquia, role assignments e role definitions; permissões herdadas por escopo                                                         |
+| Azure                    | Assinaturas acessíveis, Resource Graph, configurações ARM por recurso, custos reais diários por recurso/moeda, RBAC e herança por escopo                                      |
 | Microsoft 365            | SKUs, capacidade, consumo, planos e relações de atribuição de licenças por usuário                                                                                            |
-| Intune                   | Dispositivos, conformidade, políticas clássicas de configuração, aplicativos e eventos administrativos                                                                        |
+| Intune                   | Dispositivos, políticas clássicas e Settings Catalog, segurança de endpoints, baselines, inscrição, scripts/remediações, apps, filtros e atribuições incluídas/excluídas      |
 | Teams e SharePoint       | Equipes/membros, sites e grants de aplicações; bridge separado para ACLs de webs/subsites e grupos SharePoint                                                                 |
 | Exchange                 | Feed de auditoria; bridge PowerShell para caixas, FullAccess, SendAs, metadados de SendOnBehalf, encaminhamento, regras de transporte, domínios e configuração da organização |
 | Plano de dados Azure     | Consulta a tabelas de diagnóstico nos workspaces configurados, quando os logs foram previamente habilitados                                                                   |
 | Evidências               | Payload original com contexto, SHA-256, histórico de snapshots, ledger encadeado e exportação                                                                                 |
-| Cobertura                | 33 definições de fontes, erros/limites explícitos, janelas de coleta e checkpoints                                                                                            |
+| Cobertura                | 98 definições de fontes, erros/limites explícitos, janelas de coleta e checkpoints                                                                                            |
 | Multitenancy             | Identidade do tenant extraída de token verificado; consultas, evidências, sessões, jobs e bridges segregados por tenant                                                       |
+
+Usuários e grupos têm navegação por relações com nomes, membros paginados, SKUs, planos de serviço e detalhes por usuário. As áreas Intune, Azure e Custos permitem investigar configurações e evidências sem perder o tenant da sessão.
 
 O catálogo de fontes está em [`src/sources.js`](src/sources.js). Fontes Graph têm retomada por cursor, inclusive coletas por grupo/aplicação/site; o snapshot só retira relações não observadas após completar o ciclo. Consulte [cobertura e limites](docs/COVERAGE.md).
 

@@ -303,7 +303,13 @@ export async function overview(pool, tenant) {
     coverage: await coverage(pool, tenant),
   };
 }
-export async function resourceDetail(pool, tenant, key) {
+export async function resourceDetail(
+  pool,
+  tenant,
+  key,
+  offset = 0,
+  childOffset = 0,
+) {
   const r = (
     await pool.query("SELECT * FROM resources WHERE tenant_id=$1 AND key=$2", [
       tenant,
@@ -318,8 +324,14 @@ export async function resourceDetail(pool, tenant, key) {
     );
   const edges = (
     await pool.query(
-      "SELECT * FROM edges WHERE tenant_id=$1 AND active AND (from_key=$2 OR to_key=$2 OR ($4::boolean AND relation='azure_role' AND scope IS NOT NULL AND (lower($3)=lower(scope) OR left(lower($3),length(scope)+1)=lower(scope)||'/'))) LIMIT 5001",
-      [tenant, key, key.replace(/^azure:/, ""), key.startsWith("azure:")],
+      "SELECT * FROM edges WHERE tenant_id=$1 AND active AND (from_key=$2 OR to_key=$2 OR ($4::boolean AND relation='azure_role' AND scope IS NOT NULL AND (lower($3)=lower(scope) OR left(lower($3),length(scope)+1)=lower(scope)||'/'))) ORDER BY relation,from_key,to_key,key LIMIT 51 OFFSET $5",
+      [
+        tenant,
+        key,
+        key.replace(/^azure:/, ""),
+        key.startsWith("azure:"),
+        offset,
+      ],
     )
   ).rows.filter(
     (x) =>
@@ -339,16 +351,72 @@ export async function resourceDetail(pool, tenant, key) {
       [tenant, key],
     )
   ).rows;
+  const keys = [...new Set(edges.flatMap((e) => [e.from_key, e.to_key]))];
+  const related = keys.length
+    ? (
+        await pool.query(
+          "SELECT key,name,kind,properties FROM resources WHERE tenant_id=$1 AND key=ANY($2::text[])",
+          [tenant, keys],
+        )
+      ).rows
+    : [];
+  const names = new Map(related.map((r) => [r.key, r]));
+  const linkedEdges = edges.map((e) => ({
+    ...e,
+    fromName:
+      names.get(e.from_key)?.name ||
+      (e.to_key === key
+        ? e.properties.displayName || e.properties.userPrincipalName
+        : null) ||
+      e.from_key,
+    toName:
+      names.get(e.to_key)?.name ||
+      e.to_key
+        .replace("intune-target:#microsoft.graph.", "")
+        .replace("intune-target:", ""),
+    fromCollected: names.has(e.from_key),
+    toCollected: names.has(e.to_key),
+  }));
+  const children = (
+    await pool.query(
+      "SELECT key,name,kind,service,source,properties,last_seen,evidence_id FROM resources WHERE tenant_id=$1 AND parent_key=$2 AND active AND kind<>'costLine' ORDER BY name,key LIMIT 51 OFFSET $3",
+      [tenant, key, childOffset],
+    )
+  ).rows;
+  const costs = (
+    await pool.query(
+      "SELECT properties->>'currency' AS currency,properties->>'periodStart' AS period_start,max(properties->>'periodEnd') AS period_end,sum((properties->>'amount')::numeric)::text AS amount FROM resources WHERE tenant_id=$1 AND active AND kind='costLine' AND (parent_key=$2 OR ($3::boolean AND left(lower(parent_key),length($2)+1)=lower($2)||'/')) GROUP BY properties->>'currency',properties->>'periodStart' ORDER BY currency,period_start",
+      [
+        tenant,
+        key,
+        r.kind === "subscription" ||
+          r.kind.toLowerCase().includes("resourcegroups"),
+      ],
+    )
+  ).rows;
   return {
     resource: r,
-    edges: edges.slice(0, 5000),
-    edgesLimited: edges.length > 5000,
+    edges: linkedEdges.slice(0, 50),
+    relationshipsOffset: offset,
+    relationshipsHasMore: edges.length > 50,
+    edgesLimited: false,
+    related: related.filter((r) => r.kind === "license"),
+    children: children.slice(0, 50),
+    childrenOffset: childOffset,
+    childrenHasMore: children.length > 50,
+    costs,
     events,
     versions,
-    limitations: [
-      "Permissões observadas, não uma decisão definitiva de autorização.",
-      "Condições RBAC, deny assignments, PIM, ACLs do plano de dados e fontes não conectadas podem alterar o acesso.",
-    ],
+    limitations:
+      r.service === "Intune"
+        ? [
+            "Atribuições configuradas não comprovam implantação ou aplicabilidade final.",
+            "Inclusões, exclusões, filtros, associação de grupos e sincronização podem alterar os dispositivos alcançados.",
+          ]
+        : [
+            "Permissões observadas, não uma decisão definitiva de autorização.",
+            "Condições RBAC, deny assignments, PIM, ACLs do plano de dados e fontes não conectadas podem alterar o acesso.",
+          ],
   };
 }
 export async function accessPaths(pool, tenant, principal) {
