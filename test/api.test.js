@@ -5,6 +5,7 @@ import { createApp } from "../src/server.js";
 import { seedDemo, DEMO_TENANTS } from "../src/seed.js";
 import { loadConfig } from "../src/config.js";
 import { hmac, hash } from "../src/security.js";
+import { gzipSync } from "node:zlib";
 test("HTTP: isolamento real entre tenants, sessão, RBAC, CSRF, paginação e bridge anti-replay", async () => {
   const c = loadConfig({
       APP_MODE: "demo",
@@ -65,6 +66,23 @@ test("HTTP: isolamento real entre tenants, sessão, RBAC, CSRF, paginação e br
     return { cookie: r.cookie, token: m.body.csrf, me: m.body };
   }
   try {
+    // Regression for GHSA-27r3-jxmh-p828: malformed compressed input must not
+    // terminate the application, including before authentication/routing.
+    const compressed = await fetch(origin + "/api/demo/session", {
+      method: "POST",
+      headers: {
+        Origin: origin,
+        "Content-Type": "application/json",
+        "Content-Encoding": "gzip",
+      },
+      body: Buffer.concat([
+        gzipSync(Buffer.from("{}")),
+        Buffer.from("invalid trailing bytes"),
+      ]),
+    });
+    assert.equal(compressed.status, 400);
+    await compressed.arrayBuffer();
+    assert.equal((await request("/api/session")).status, 200);
     assert.equal((await request("/api/resources")).status, 401);
     const a = await login(DEMO_TENANTS[0].id),
       b = await login(DEMO_TENANTS[1].id),
