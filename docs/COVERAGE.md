@@ -1,6 +1,6 @@
 # Cobertura por fonte
 
-As 98 entradas do catálogo são **definições de coleta implementadas**, não 98 conexões já homologadas no seu tenant. Credenciais, permissões, versões do serviço, licenças e escopos devem ser validados em homologação.
+As 100 entradas do catálogo são **definições de coleta implementadas**, não 100 conexões já homologadas no seu tenant. Credenciais, permissões, versões do serviço, licenças e escopos devem ser validados em homologação.
 
 ## APIs e permissões
 
@@ -104,3 +104,11 @@ Referências adicionais: [Intune scripts: GET e permissão Read.All](https://lea
 Autopilot e atualizações também têm inventário, GET individual e atribuições: `intune.autopilot` usa windowsAutopilotDeploymentProfiles (DeviceManagementServiceConfig.Read.All); `intune.featureUpdates`, `qualityUpdates` e `driverUpdates` usam os perfis Windows correspondentes (DeviceManagementConfiguration.Read.All). Drivers incluem driverInventories. Anéis de atualização clássicos continuam em deviceConfigurations. Referências: [Autopilot](https://learn.microsoft.com/en-us/graph/api/resources/intune-enrollment-windowsautopilotdeploymentprofile?view=graph-rest-beta), [atribuições de drivers](https://learn.microsoft.com/en-us/graph/api/intune-softwareupdate-windowsdriverupdateprofileassignment-list?view=graph-rest-beta), [quality updates](https://learn.microsoft.com/en-us/graph/api/intune-softwareupdate-windowsqualityupdateprofile-list?view=graph-rest-beta).
 
 `intune.complianceScripts` e `.details` leem scripts de conformidade personalizada com DeviceManagementScripts.Read.All. A atribuição ocorre pela política de conformidade; não é criada uma chamada fictícia /assignments para esses scripts. A referência ao script permanece nas propriedades da política quando fornecida. [Documentação Microsoft](https://learn.microsoft.com/en-us/graph/api/intune-devices-devicecompliancescript-list?view=graph-rest-beta).
+
+## Expansão v0.4
+
+`intune.compliance.deployment` e `intune.configuration.deployment` leem `deviceStatuses` das políticas clássicas via Graph v1.0, com DeviceManagementConfiguration.Read.All. Os registros são filhos `intuneDeployment` da política, versionados e associados a evidências. Não existe inferência de vínculo com um managedDevice somente pelo nome ou por um ID de relatório opaco. Para Settings Catalog, apps e scripts, esta versão não acrescenta uma API universal de resultados.
+
+O histórico visual e a análise local de alcance não acrescentam chamadas de escrita Microsoft. Consulte [INSIGHTS.md](INSIGHTS.md) para sintaxe de filtros, critérios de dados incompletos, limites e separação entre estimativa e implantação real.
+
+Referências dos relatórios: [configuração](https://learn.microsoft.com/en-us/graph/api/intune-deviceconfig-deviceconfigurationdevicestatus-list?view=graph-rest-1.0), [conformidade](https://learn.microsoft.com/en-us/graph/api/intune-deviceconfig-devicecompliancedevicestatus-list?view=graph-rest-1.0).

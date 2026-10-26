@@ -118,7 +118,7 @@ export async function ingest(
       for (const r of normalized.resources) {
         const old = (
           await db.query(
-            "SELECT properties,name,kind,service,created_at,created_by,parent_key FROM resources WHERE tenant_id=$1 AND key=$2",
+            "SELECT properties,name,kind,service,created_at,created_by,parent_key,evidence_id FROM resources WHERE tenant_id=$1 AND key=$2",
             [tenant, r.key],
           )
         ).rows[0];
@@ -173,6 +173,7 @@ export async function ingest(
               evidence.id,
               JSON.stringify({
                 before: old.properties,
+                beforeEvidenceId: old.evidence_id,
                 after: r.properties,
                 attribution:
                   "Autor e horário real não determinados por comparação de snapshots.",

@@ -18,6 +18,7 @@ CREATE INDEX IF NOT EXISTS edges_path_idx ON edges(tenant_id,from_key,to_key,rel
 CREATE INDEX IF NOT EXISTS edges_target_idx ON edges(tenant_id,to_key,active);
 CREATE TABLE IF NOT EXISTS events(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),tenant_id uuid NOT NULL REFERENCES tenants(id),source text NOT NULL,native_id text NOT NULL,occurred_at timestamptz,observed_at timestamptz NOT NULL DEFAULT now(),actor_key text,actor_name text,target_key text,target_name text,operation text NOT NULL,category text NOT NULL,outcome text,severity text NOT NULL DEFAULT 'info',correlation_id text,evidence_id uuid NOT NULL REFERENCES evidence(id),properties jsonb NOT NULL DEFAULT '{}',UNIQUE(tenant_id,source,native_id));
 CREATE INDEX IF NOT EXISTS timeline_idx ON events(tenant_id,occurred_at DESC,id);
+CREATE INDEX IF NOT EXISTS events_target_idx ON events(tenant_id,target_key,category,observed_at DESC,id DESC);
 CREATE TABLE IF NOT EXISTS audit_ledger(id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,tenant_id uuid NOT NULL REFERENCES tenants(id),at timestamptz NOT NULL DEFAULT now(),actor text NOT NULL,action text NOT NULL,target text NOT NULL,details jsonb NOT NULL DEFAULT '{}',previous_hash text NOT NULL,sha256 text NOT NULL);
 CREATE INDEX IF NOT EXISTS ledger_tenant_idx ON audit_ledger(tenant_id,id);
 CREATE TABLE IF NOT EXISTS bridge_nonces(tenant_id uuid NOT NULL REFERENCES tenants(id),nonce text NOT NULL,at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(tenant_id,nonce));

@@ -52,7 +52,16 @@ export function normalize(source, raw, context = {}) {
       ...d,
     });
   const definition = sourceById(source);
-  if (definition?.assignment) {
+  if (definition?.deployment) {
+    resource(
+      intuneKey(definition.family, ref) + ":deployment:" + id,
+      raw.deviceDisplayName || id,
+      "intuneDeployment",
+      "Intune",
+      raw,
+      { parentKey: intuneKey(definition.family, ref) },
+    );
+  } else if (definition?.assignment) {
     const target = raw.target || {},
       type = String(target["@odata.type"] || "unknown"),
       group = target.groupId || target.entraObjectId,

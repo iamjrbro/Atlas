@@ -102,6 +102,7 @@ const menu = () => [
   ["licenses", "Licenças e capacidade"],
   ["findings", "Pontos de atenção"],
   ["coverage", "Fontes e cobertura"],
+  ["diagnostics", "Diagnóstico de conexão"],
   ["runs", "Coletas"],
   ...(isAuditor() ? [["ledger", "Evidências e integridade"]] : []),
   ["settings", "Conectar meu tenant"],
@@ -217,6 +218,7 @@ async function load(page = state.page, { preserve = false } = {}) {
       cache.licenses = (await api("/resources?kind=license&limit=200")).items;
     if (page === "findings") cache.findings = (await api("/findings")).items;
     if (page === "coverage") cache.coverage = (await api("/coverage")).items;
+    if (page === "diagnostics") cache.diagnostics = await api("/diagnostics");
     if (page === "runs") cache.runs = (await api("/runs")).items;
     if (page === "ledger") {
       const [ledger, integrity] = await Promise.all([
@@ -523,6 +525,12 @@ function settings() {
     title(
       "Seu tenant. Seu observatório.",
       "Onboarding, escopos e fontes de auditoria em um fluxo orientado.",
+      btn(
+        "Ver diagnóstico de conexão",
+        "nav",
+        "primary",
+        'data-page="diagnostics"',
+      ),
     ) +
     `<div class="grid"><div class="card steps"><div class="card-head"><div><h2>Conectar Azure e Microsoft 365</h2><p>Habilite cada serviço com consentimento e escopo explícitos</p></div></div><div class="step"><div><h3>Identidade e tenant</h3><p>Você está em ${esc(me.tenant.name)}.</p><span class="code">${esc(me.tenant.id)}</span></div></div><div class="step"><div><h3>Consentir o collector Microsoft Graph</h3><p>O administrador escolhe os dados disponibilizados ao Atlas. A conexão é confirmada por coleta, não apenas pelo retorno da tela de consentimento.</p>${me.mode === "demo" ? "<p>Demonstração: consentimento externo desabilitado.</p>" : '<div class="actions"><a href="/auth/consent?resource=graph">Abrir consentimento Microsoft ↗</a></div>'}</div></div><div class="step"><div><h3>Habilitar Azure e logs do Microsoft 365</h3><p>Atribua leitura ao service principal nos escopos Azure desejados. No Microsoft 365, consinta ActivityFeed.Read e ative as subscriptions do feed conforme o guia.</p>${me.mode === "microsoft" ? '<a href="/auth/consent?resource=m365">Consentir Management Activity API ↗</a>' : ""}</div></div><div class="step"><div><h3>Configurar e validar fontes</h3><p>Defina assinaturas e workspaces, habilite fontes e acompanhe as primeiras coletas. Exchange e ACLs de SharePoint usam os bridges PowerShell.</p>${btn("Abrir fontes e cobertura ↗", "nav", "ghost small", 'data-page="coverage"')}</div></div><div class="step"><div><h3>Verificar retenção e lacunas</h3><p>Ative os logs e políticas de retenção necessários na Microsoft. O Atlas não recupera eventos que a fonte nunca registrou ou já removeu.</p><a href="https://github.com/iamjrbro/Atlas/tree/main/docs" target="_blank" rel="noopener noreferrer">Consultar documentação ↗</a></div></div></div><div class="card settings-card"><h2>Escopo do tenant</h2>${isAdmin() ? `<form id="settings-form"><label for="tenant-name">Nome do workspace</label><input id="tenant-name" required maxlength="100" value="${esc(me.tenant.name)}"><label for="subscriptions">Assinaturas Azure · UUIDs separados por vírgula</label><textarea id="subscriptions" placeholder="Vazio: todas as assinaturas acessíveis pelo collector">${esc(me.tenant.settings.subscriptions?.join(", "))}</textarea><label for="workspaces">Workspaces Log Analytics · JSON</label><textarea id="workspaces" placeholder='[{"id":"UUID","tables":["AzureDiagnostics"]}]'>${esc(JSON.stringify(me.tenant.settings.workspaces || [], null, 2))}</textarea><div class="section-label">FONTES HABILITADAS</div>${cache.coverage.map((s) => `<label class="checkbox-line"><input type="checkbox" name="source" value="${s.id}" ${me.tenant.settings.sources?.includes(s.id) ? "checked" : ""}><span>${esc(s.name)}</span>${s.elevated ? pill("Elevada", "warn") : ""}</label>`).join("")}<div class="spacer"></div><button class="primary" type="submit">Salvar configuração</button><p class="error-text" id="settings-error"></p></form>` : "<p>Somente um administrador Atlas pode alterar configurações e solicitar coletas.</p>"}</div></div>`
   );
@@ -540,6 +548,7 @@ const views = {
   licenses,
   findings,
   coverage,
+  diagnostics,
   runs,
   ledger,
   settings,
@@ -568,7 +577,7 @@ async function resourceDetail(key, offset = 0, childOffset = 0) {
   const r = result.resource;
   modal(
     r.name,
-    `${pill(r.service, "violet")} ${pill(r.kind)}<details class="resource-origin"><summary>Origem, identificação e datas</summary>${[
+    `${pill(r.service, "violet")} ${pill(r.kind)}${detailTools(r)}<details class="resource-origin"><summary>Origem, identificação e datas</summary>${[
       ["Identificador", r.key],
       ["Criado em", fmt(r.created_at)],
       ["Criado por", r.created_by || "Não informado pela fonte"],
@@ -635,6 +644,106 @@ function costs() {
       "Custo real por recurso e assinatura, com moeda e período explícitos.",
     ) +
     `<div class="notice">${pill(d.coverage.status)} · ${esc(d.coverage.limitation)} Último sucesso: ${esc(fmt(d.coverage.last_success))}. Uma coleta parcial pode misturar observações de momentos distintos; confira o horário de cada registro.</div><div class="card">${d.totals.map((t) => `<div class="cost-total"><div><b>Assinatura · ${esc(t.subscription_id)}</b><small>${esc(t.period_start.slice(0, 10))} até ${esc(fmt(t.period_end))}</small></div><strong>${esc(money(t.amount, t.currency))}</strong></div>`).join("") || "<p>Totais indisponíveis sem coleta de custos.</p>"}</div><div class="card"><div class="toolbar"><input id="query" aria-label="Buscar custos por recurso ou assinatura" placeholder="Buscar recurso ou assinatura" value="${esc(state.q)}"></div><div id="list-results">${costTable(d.items)}${pagination()}</div></div>`
+  );
+}
+
+const diagnosticLabels = {
+  observed: ["Coleta recente", ""],
+  simulated: ["Simulado", "violet"],
+  disabled: ["Desabilitada", "gray"],
+  unverified: ["Não verificada", "gray"],
+  blocked: ["Acesso bloqueado", "bad"],
+  setup: ["Configuração pendente", "warn"],
+  partial: ["Coleta parcial", "warn"],
+  stale: ["Coleta antiga", "warn"],
+  gap: ["Lacuna histórica", "bad"],
+  failed: ["Falha", "bad"],
+};
+function diagnostics() {
+  const d = cache.diagnostics;
+  return (
+    title(
+      "Diagnóstico de conexão",
+      "Descubra o que já foi observado, o que falta configurar e qual fonte precisa de atenção.",
+      btn("Atualizar diagnóstico", "refresh", "primary"),
+    ) +
+    `<div class="notice ${d.mode === "demo" ? "warning" : ""}">${d.mode === "demo" ? "Demonstração: os sucessos abaixo são simulados. Nenhuma permissão Microsoft foi verificada." : "A configuração local e o último resultado de coleta são apresentados separadamente. Testar um serviço enfileira coletas de leitura, sem conceder permissões."}</div>
+    <div class="card diagnostic-config"><div><span>Collector</span><b>${d.configuration.collectorConfigured ? "Credencial configurada; validade depende da coleta" : "Não configurado"}</b></div><div><span>Escopo Azure</span><b>${esc(d.configuration.subscriptionScope)}</b></div><div><span>Workspaces</span><b>${num(d.configuration.workspaces)}</b></div><div><span>Chave bridge</span><b>${d.configuration.bridgeKeyConfigured ? "Configurada; certificado e agenda precisam de validação" : "Não configurada"}</b></div></div>
+    <div class="diagnostic-services">${d.services
+      .map(
+        (service) =>
+          `<details class="card diagnostic-service"><summary><div><h2>${esc(service.name)}</h2><p>${num(service.observed)} de ${num(service.totalEnabled)} fontes habilitadas com coleta real recente</p></div><span>Ver fontes e orientações ▾</span></summary><div class="diagnostic-service-body">${isAdmin() ? btn("Coletar fontes de verificação", "probe", "small", `data-service="${esc(service.name)}" ${d.mode === "demo" || !service.probes.length ? "disabled" : ""}`) : ""}<p class="tiny">Verificação representativa: ${esc(service.probes.join(", ") || "sem fonte de teste habilitada")}. Acompanhe o resultado em Coletas.</p>${service.sources
+            .map((source) => {
+              const label = diagnosticLabels[source.state] || [
+                source.state,
+                "gray",
+              ];
+              return `<details class="diagnostic-source"><summary><span>${esc(source.name)}</span>${pill(label[0], label[1])}</summary><p>${esc(source.action)}</p><div class="definition"><span>Permissão exigida</span><b>${esc(source.permission)}</b></div><div class="definition"><span>Último sucesso</span><b>${esc(fmt(source.lastSuccess))}</b></div><p class="tiny">${esc(source.id)} · ${esc(source.code || "Sem erro registrado")} ${source.correlation ? "· Correlação: " + esc(source.correlation) : ""} ${source.retryAt ? "· Nova tentativa após " + esc(fmt(source.retryAt)) : ""}</p>${btn("Ver fonte", "source", "ghost small", `data-id="${esc(source.id)}"`)}</details>`;
+            })
+            .join("")}</div></details>`,
+      )
+      .join(
+        "",
+      )}</div><div class="notice">${d.limitations.map(esc).join("<br>")}</div>`
+  );
+}
+function detailTools(r) {
+  return `<div class="actions resource-tools">${isAuditor() ? btn("Comparar alterações", "history", "small", `data-key="${esc(r.key)}"`) : ""}${r.service === "Intune" && ["devicePolicy", "intuneScript", "managedApp"].includes(r.kind) ? btn("Analisar alcance da política", "reach", "primary small", `data-key="${esc(r.key)}"`) : ""}</div>`;
+}
+const comparisonValue = (value) =>
+  !value.present
+    ? '<span class="absent-value">Ausente</span>'
+    : `<pre>${esc(value.truncated ? value.text + "… [abreviado]" : JSON.stringify(value.value, null, 2))}</pre>`;
+async function showHistory(key, offset = 0) {
+  const d = await api(
+    "/resource/history?" + new URLSearchParams({ key, offset, limit: 10 }),
+  );
+  cache.history = d;
+  modal(
+    "Alterações · " + d.resource.name,
+    `<div class="notice">${d.limitations.map(esc).join("<br>")}</div><div class="comparison">${d.items.map((change) => `<article class="change-entry"><h3>Detectada em ${esc(fmt(change.observedAt))}</h3><p>Fonte: ${esc(change.source)} · Autor ${esc(change.actor || "não determinado pelo snapshot")} · Ocorrência ${change.occurredAt ? esc(fmt(change.occurredAt)) : "desconhecida"}</p><div class="table-wrap"><table class="diff-table"><thead><tr><th>CAMPO / OPERAÇÃO</th><th>ANTES</th><th>DEPOIS</th></tr></thead><tbody>${change.changes.map((field) => `<tr><td><code>${esc(field.path)}</code><small>${esc({ added: "Adicionado", removed: "Removido", changed: "Alterado" }[field.operation])}</small></td><td class="diff-before">${comparisonValue(field.before)}</td><td class="diff-after">${comparisonValue(field.after)}</td></tr>`).join("") || '<tr><td colspan="3">Nenhuma diferença de propriedade neste registro.</td></tr>'}</tbody></table></div>${change.truncated ? '<p class="notice warning">Comparação limitada aos primeiros 200 campos. Consulte a evidência para o conteúdo completo.</p>' : ""}${isAuditor() ? (change.beforeEvidenceId ? btn("Evidência antes", "evidence", "ghost small", `data-id="${esc(change.beforeEvidenceId)}"`) : "") + btn("Evidência depois", "evidence", "ghost small", `data-id="${esc(change.evidenceId)}"`) : ""}</article>`).join("") || '<div class="empty">Nenhuma transição registrada. A primeira coleta forma a linha de base; não é uma alteração comprovada.</div>'}</div>
+    <div class="pagination"><span>Até 10 alterações por página</span><div>${btn("← Anteriores", "history", "small", `data-key="${esc(key)}" data-offset="${Math.max(0, offset - 10)}" ${offset ? "" : "disabled"}`)}${btn("Mais antigas →", "history", "small", `data-key="${esc(key)}" data-offset="${offset + 10}" ${d.hasMore ? "" : "disabled"}`)}</div></div>
+    <div class="divider">ÚLTIMOS 20 EVENTOS DO MESMO RECURSO</div><p>Eventos independentes. Um autor informado aqui não é atribuído automaticamente à mudança entre snapshots.</p>${d.providerEvents.map((e) => `<div class="path-card"><b>${esc(e.operation)}</b><p>${esc(e.actor_name || "Ator não informado")} · ${esc(fmt(e.occurred_at))} · ${esc(e.source)}</p>${isAuditor() ? btn("Evidência do evento", "evidence", "ghost small", `data-id="${esc(e.evidence_id)}"`) : ""}</div>`).join("") || "<p>Nenhum evento do provedor correlacionado pela chave do recurso.</p>"}`,
+    btn("Voltar ao recurso", "resource", "primary", `data-key="${esc(key)}"`),
+  );
+}
+const reachLabels = {
+  estimated_in_scope: ["Incluído no escopo estimado", ""],
+  estimated_excluded: ["Excluído no escopo estimado", "warn"],
+  not_observed_in_scope: ["Fora do escopo observado", "gray"],
+  indeterminate: ["Indeterminado", "warn"],
+};
+async function showReach(key, offset = 0, reportOffset = 0) {
+  const d = await api(
+    "/intune/reach?" +
+      new URLSearchParams({ key, offset, reportOffset, limit: 50 }),
+  );
+  cache.reach = d;
+  const counts = {};
+  for (const device of d.items)
+    counts[device.outcome] = (counts[device.outcome] || 0) + 1;
+  modal(
+    "Alcance · " + d.policy.name,
+    `<div class="reach-view"><div class="notice ${d.complete ? "" : "warning"}">${d.complete ? "Snapshots recentes das fontes necessárias. A análise abaixo continua sendo uma estimativa local." : "Dados insuficientes, antigos ou limitados: o alcance fica indeterminado. Revise as fontes abaixo."}${d.limited ? " Limite local atingido: até 50 mil relações/objetos e 500 atribuições." : ""}</div>
+    <div class="divider">1 · DESTINOS CONFIGURADOS</div>${d.assignments.map((a) => `<div class="mini-row"><span>${esc(a.targetName)}</span>${pill(a.relation === "excluded_from" ? "Exclusão" : "Inclusão", a.relation === "excluded_from" ? "warn" : "violet")}${isAuditor() ? btn("Evidência", "evidence", "ghost small", `data-id="${esc(a.evidenceId)}"`) : ""}</div>`).join("") || "<p>Nenhuma atribuição coletada; isso não confirma ausência de atribuições no tenant.</p>"}
+    <div class="divider">2 · ESCOPO ESTIMADO DOS DISPOSITIVOS OBSERVADOS</div><p>Contagens desta página: ${
+      Object.entries(counts)
+        .map(
+          ([status, count]) => `${esc(reachLabels[status][0])}: ${num(count)}`,
+        )
+        .join(" · ") || "nenhum dispositivo coletado"
+    }.</p>
+    ${d.items
+      .map((device) => {
+        const label = reachLabels[device.outcome];
+        return `<details class="reach-device"><summary><span>${esc(device.name)}</span>${pill(label[0], label[1])}</summary><p>Última coleta: ${esc(fmt(device.lastSeen))} · Último sync declarado: ${esc(fmt(device.lastSync))}</p>${device.reasons.map((r) => `<p>${esc(r)}</p>`).join("")}${device.paths.map((path) => `<div class="path-card"><b>${esc(path.targetName)}</b><p>${esc(path.relation)} · ${path.result === null ? "Indeterminado" : path.result ? "Condição observada" : "Condição não atendida"} ${path.intent ? "· Intent: " + esc(path.intent) : ""}</p><p>${esc(path.reason)}</p></div>`).join("")}${resourceLink(device.key, "Abrir dispositivo")}</details>`;
+      })
+      .join("")}
+    <div class="pagination"><span>Até 50 dispositivos por página</span><div>${btn("← Dispositivos anteriores", "reach", "small", `data-key="${esc(key)}" data-offset="${Math.max(0, offset - 50)}" data-report-offset="${reportOffset}" ${offset ? "" : "disabled"}`)}${btn("Mais dispositivos →", "reach", "small", `data-key="${esc(key)}" data-offset="${offset + 50}" data-report-offset="${reportOffset}" ${d.hasMore ? "" : "disabled"}`)}</div></div>
+    <div class="divider">3 · RESULTADOS DECLARADOS PELO INTUNE</div><p>${d.reportCoverage ? "Fonte: " + esc(d.reportCoverage.status) + " · Último sucesso: " + esc(fmt(d.reportCoverage.last_success)) : "Sem relatório coletado para esta família. A coleta automática de resultados está disponível para políticas clássicas de configuração e conformidade."}</p>${d.reports.map((r) => `<div class="path-card"><b>${esc(r.name)}</b> ${pill(r.properties.status || "Estado não informado")}<p>Relatado em ${esc(fmt(r.properties.lastReportedDateTime))} · ${esc(r.properties.userPrincipalName || "Usuário não informado")}</p>${resourceLink(r.key, "Abrir relatório")}</div>`).join("") || "<p>Nenhum resultado disponível. Isso não comprova sucesso nem falha de implantação.</p>"}
+    <div class="pagination"><span>Relatórios paginados separadamente</span><div>${btn("← Relatórios anteriores", "reach", "small", `data-key="${esc(key)}" data-offset="${offset}" data-report-offset="${Math.max(0, reportOffset - 50)}" ${reportOffset ? "" : "disabled"}`)}${btn("Mais relatórios →", "reach", "small", `data-key="${esc(key)}" data-offset="${offset}" data-report-offset="${reportOffset + 50}" ${d.reportsHasMore ? "" : "disabled"}`)}</div></div>
+    <details><summary>Fontes usadas nesta análise</summary>${d.coverage.map((s) => `<div class="mini-row"><span>${esc(s.source)}</span>${pill(s.status)}<small>${esc(fmt(s.last_success))}</small></div>`).join("")}${btn("Abrir diagnóstico", "nav", "ghost small", 'data-page="diagnostics"')}</details><div class="notice warning">${d.limitations.map(esc).join("<br>")}</div></div>`,
+    btn("Voltar à política", "resource", "primary", `data-key="${esc(key)}"`),
   );
 }
 
@@ -787,6 +896,27 @@ document.addEventListener("click", async (ev) => {
     }
     if (a === "event") eventDetail(b.dataset.id);
     if (a === "resource") await resourceDetail(b.dataset.key);
+    if (a === "history")
+      await showHistory(b.dataset.key, Number(b.dataset.offset || 0));
+    if (a === "reach")
+      await showReach(
+        b.dataset.key,
+        Number(b.dataset.offset || 0),
+        Number(b.dataset.reportOffset || 0),
+      );
+    if (a === "probe") {
+      b.disabled = true;
+      try {
+        const r = await api("/diagnostics/probe", {
+          method: "POST",
+          body: { service: b.dataset.service },
+        });
+        toast(r.message);
+        await load("runs");
+      } finally {
+        b.disabled = false;
+      }
+    }
     if (a === "detail-page")
       await resourceDetail(
         cache.detail.resource.key,

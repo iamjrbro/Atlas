@@ -423,6 +423,39 @@ export async function seedDemo(pool) {
       sub,
       period,
     );
+    Object.assign(records["intune.devices"][0], {
+      azureADDeviceId: "entra-device-001",
+      managedDeviceOwnerType: "company",
+      lastSyncDateTime: new Date(now - 60000).toISOString(),
+      manufacturer: "Contoso",
+      model: "AtlasBook",
+    });
+    Object.assign(records["intune.devices"][1], {
+      azureADDeviceId: "entra-device-002",
+      managedDeviceOwnerType: "personal",
+      lastSyncDateTime: new Date(now - 120000).toISOString(),
+    });
+    records["intune.devices"].push(
+      {
+        id: "device-003",
+        deviceName: "NB-EXCECAO-031",
+        azureADDeviceId: "entra-device-003",
+        managedDeviceOwnerType: "company",
+        operatingSystem: "Windows",
+      },
+      {
+        id: "device-004",
+        deviceName: "NB-SEM-DADOS-041",
+        azureADDeviceId: "entra-device-004",
+        operatingSystem: "Windows",
+      },
+    );
+    records["entra.groups"].push({
+      id: "device-exceptions",
+      displayName: "Máquinas · Exceções de implantação",
+      securityEnabled: true,
+      groupTypes: [],
+    });
     for (let i = 0; i < 70; i++) {
       const at = new Date(now - i * 2.3 * 3600000).toISOString();
       const which = i % 4;
@@ -588,6 +621,76 @@ export async function seedDemo(pool) {
         accountEnabled: true,
       },
     ];
+    for (let i = 2; i <= 4; i++) {
+      records["entra.devices"].push({
+        id: "directory-device-00" + i,
+        deviceId: "entra-device-00" + i,
+        displayName: records["intune.devices"][i - 1].deviceName,
+        operatingSystem: records["intune.devices"][i - 1].operatingSystem,
+      });
+      extras.push([
+        "entra.memberships",
+        {
+          id: "directory-device-00" + i,
+          "@odata.type": "#microsoft.graph.device",
+        },
+        { parent: deviceGroup, relation: "members" },
+      ]);
+    }
+    extras.push(
+      [
+        "entra.memberships",
+        {
+          id: "directory-device-003",
+          "@odata.type": "#microsoft.graph.device",
+        },
+        { parent: "device-exceptions", relation: "members" },
+      ],
+      [
+        "intune.catalog.assignments",
+        {
+          id: "a3",
+          target: {
+            "@odata.type": "#microsoft.graph.exclusionGroupAssignmentTarget",
+            groupId: "device-exceptions",
+          },
+        },
+        { parent: "catalog-001", relation: "assignments" },
+      ],
+      [
+        "intune.configuration.assignments",
+        {
+          id: "config-assignment",
+          target: {
+            "@odata.type": "#microsoft.graph.groupAssignmentTarget",
+            groupId: deviceGroup,
+          },
+        },
+        { parent: "config-01", relation: "assignments" },
+      ],
+      [
+        "intune.configuration.deployment",
+        {
+          id: "report-001",
+          deviceDisplayName: "NB-ENG-023",
+          status: "compliant",
+          lastReportedDateTime: new Date(now - 300000).toISOString(),
+          userPrincipalName: "ana@example.test",
+        },
+        { parent: "config-01", relation: "deviceStatuses" },
+      ],
+      [
+        "intune.configuration.deployment",
+        {
+          id: "report-002",
+          deviceDisplayName: "NB-PROD-014",
+          status: "error",
+          lastReportedDateTime: new Date(now - 600000).toISOString(),
+          userPrincipalName: "lucas@example.test",
+        },
+        { parent: "config-01", relation: "deviceStatuses" },
+      ],
+    );
     for (const [source, record, context] of extras) {
       const runId = randomUUID();
       await pool.query(
@@ -617,6 +720,31 @@ export async function seedDemo(pool) {
         source: "entra.devices",
         runId,
         records: records["entra.devices"].map((record) => ({ record })),
+      });
+    }
+    await pool.query(
+      "INSERT INTO coverage(tenant_id,source,status,last_success,last_attempt,records,detail) VALUES($1,'entra.devices','success',now(),now(),4,'{\"fixture\":true}') ON CONFLICT DO NOTHING",
+      [tenant.id],
+    );
+    // Two distinct transitions exercise the visual comparison and reversions.
+    for (const [index, settingCount] of [3, 2].entries()) {
+      const runId = randomUUID(),
+        record = {
+          ...records["intune.catalog"][0],
+          settingCount,
+          ...(index === 0
+            ? { description: "Baseline revisada pela equipe de segurança" }
+            : {}),
+        };
+      await pool.query(
+        "INSERT INTO runs(id,tenant_id,source,status) VALUES($1,$2,'intune.catalog','success')",
+        [runId, tenant.id],
+      );
+      await ingest(pool, {
+        tenant: tenant.id,
+        source: "intune.catalog",
+        runId,
+        records: [{ record }],
       });
     }
     const id = randomUUID();

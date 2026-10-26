@@ -25,6 +25,9 @@ import { startWorker } from "./worker.js";
 import { bridgeHandler } from "./bridge.js";
 import { findings } from "./findings.js";
 import { seedDemo, DEMO_TENANTS } from "./seed.js";
+import { resourceHistory } from "./changes.js";
+import { policyReach } from "./intune-reach.js";
+import { connectionDiagnostics, PROBES } from "./diagnostics.js";
 export function createApp(config, pool) {
   const app = express();
   app.disable("x-powered-by");
@@ -261,6 +264,98 @@ export function createApp(config, pool) {
       ),
     ),
   );
+  api.get("/resource/history", async (req, res) => {
+    auditor(req);
+    const p = pageSchema.parse(req.query);
+    p.limit = z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(20)
+      .default(10)
+      .parse(req.query.limit);
+    res.json(
+      await resourceHistory(
+        pool,
+        req.actor.tenant,
+        z.string().min(1).max(4000).parse(req.query.key),
+        p,
+      ),
+    );
+  });
+  api.get("/intune/reach", async (req, res) => {
+    const p = pageSchema.parse(req.query);
+    res.json(
+      await policyReach(
+        pool,
+        req.actor.tenant,
+        z.string().min(1).max(4000).parse(req.query.key),
+        {
+          ...p,
+          reportOffset: z.coerce
+            .number()
+            .int()
+            .min(0)
+            .max(1000000)
+            .default(0)
+            .parse(req.query.reportOffset),
+        },
+      ),
+    );
+  });
+  api.get("/diagnostics", async (req, res) =>
+    res.json(await connectionDiagnostics(pool, req.actor.tenant, config)),
+  );
+  api.post("/diagnostics/probe", async (req, res) => {
+    admin(req);
+    if (config.mode === "demo")
+      throw new AppError(
+        409,
+        "DEMO_NO_COLLECTION",
+        "Demonstração: nenhuma conexão Microsoft será testada.",
+      );
+    const { service } = z
+      .object({ service: z.enum(Object.keys(PROBES)) })
+      .strict()
+      .parse(req.body);
+    const settings = (
+      await pool.query("SELECT settings FROM tenants WHERE id=$1", [
+        req.actor.tenant,
+      ])
+    ).rows[0]?.settings;
+    const sources = PROBES[service].filter((id) =>
+      settings?.sources?.includes(id),
+    );
+    if (!sources.length)
+      throw new AppError(
+        409,
+        "NO_ENABLED_PROBE",
+        "Habilite uma fonte de verificação deste serviço antes de solicitar a coleta.",
+      );
+    const jobs = await transaction(pool, async (db) => {
+      const queued = [];
+      for (const source of sources)
+        queued.push({
+          source,
+          ...(await queueSource(db, req.actor.tenant, source, req.actor.oid)),
+        });
+      await ledger(
+        db,
+        req.actor.tenant,
+        req.actor.oid,
+        "diagnostics.probe",
+        service,
+        { sources },
+      );
+      return queued;
+    });
+    res.status(202).json({
+      service,
+      jobs,
+      message:
+        "Coletas de leitura enfileiradas. Acompanhe Coletas e atualize o diagnóstico após a conclusão.",
+    });
+  });
   api.get("/costs", async (req, res) => {
     const p = pageSchema.parse(req.query),
       tenant = req.actor.tenant;

@@ -104,3 +104,13 @@ A atualização não amplia consentimentos Microsoft automaticamente nem adicion
 Para Azure, habilite azure.subscriptions e azure.resources, execute uma coleta completa do inventário e então habilite azure.configurations. Dê ao collector acesso **Cost Management Reader** nas assinaturas desejadas e confira a política de acesso a custos do contrato antes de habilitar azure.costs. Compare os totais do mês UTC e moeda com Cost Analysis; o custo pode ter atraso e ajustes. Lista de assinaturas vazia enumera todas as acessíveis; não descobre assinaturas que negam acesso ao collector.
 
 Valide uma política com inclusão/exclusão e filtro, um script cujo conteúdo possa ser lido, um grupo com dispositivos e um usuário com licenças. Compare atribuições/configurações com o portal Intune. Conteúdo de scripts é armazenado em evidências e exibido como texto, sem execução; revise os papéis Atlas e a retenção caso scripts contenham informação sensível. Execute `npm run migrate` para adicionar índices idempotentes de navegação. A atualização reutiliza as tabelas de recursos, relações, evidências e cursores existentes.
+
+## Atualizar para v0.4
+
+Execute `npm run migrate` para instalar o índice idempotente de histórico por recurso. Habilite `intune.configuration.deployment` e `intune.compliance.deployment` nas configurações já existentes se desejar relatórios de políticas clássicas; requerem a permissão de leitura de configuração Intune já documentada.
+
+Para a análise de alcance, colete a família da política e sua fonte `.assignments`, `entra.groups`, `entra.memberships`, `entra.devices` e `intune.devices`. Quando houver filtros, colete `intune.filters`. A análise exige snapshots concluídos há menos de 24 horas; dados ausentes, parciais ou antigos produzem resultado indeterminado. Grupos dinâmicos usam a associação observada; suas regras não são recalculadas.
+
+Abra **Diagnóstico de conexão** após configurar o tenant. Expanda uma fonte para ver permissão, último sucesso, código e ação sugerida. Admin pode selecionar **Coletar fontes de verificação** e acompanhar os jobs em Coletas; volte e atualize o diagnóstico ao terminar. Isso não concede permissões nem valida automaticamente todas as fontes do serviço. Em demonstração, os botões de coleta ficam desabilitados.
+
+Abra uma política no inventário Intune para analisar seu alcance. Auditor/Admin também pode abrir **Comparar alterações** em um recurso; a primeira coleta não terá um antes/depois. Compare uma alteração conhecida com o portal e a evidência antes de homologar a coleta real.

@@ -4,7 +4,7 @@
 
 O Atlas conecta os dados que normalmente ficam distribuídos entre Entra, Azure, Microsoft 365, Intune, Teams, SharePoint e Exchange. Investigue **quem fez o quê, quando e em qual recurso**, explore de onde vem uma permissão e consulte a evidência que sustenta cada informação.
 
-**Status: v0.3 — implementação para piloto e homologação.** Os conectores têm código real e testes com respostas controladas; ainda precisam de validação end-to-end em tenants e infraestrutura Microsoft reais. A demonstração usa dados fictícios, separados de qualquer ambiente real.
+**Status: v0.4 — implementação para piloto e homologação.** Os conectores têm código real e testes com respostas controladas; ainda precisam de validação end-to-end em tenants e infraestrutura Microsoft reais. A demonstração usa dados fictícios, separados de qualquer ambiente real.
 
 ![Atlas — demonstração com dados fictícios](docs/images/dashboard.png)
 
@@ -36,12 +36,20 @@ Para integrar seu tenant: [guia de onboarding](docs/ONBOARDING.md). Para hospeda
 | Exchange                 | Feed de auditoria; bridge PowerShell para caixas, FullAccess, SendAs, metadados de SendOnBehalf, encaminhamento, regras de transporte, domínios e configuração da organização |
 | Plano de dados Azure     | Consulta a tabelas de diagnóstico nos workspaces configurados, quando os logs foram previamente habilitados                                                                   |
 | Evidências               | Payload original com contexto, SHA-256, histórico de snapshots, ledger encadeado e exportação                                                                                 |
-| Cobertura                | 98 definições de fontes, erros/limites explícitos, janelas de coleta e checkpoints                                                                                            |
+| Cobertura                | 100 definições de fontes, erros/limites explícitos, janelas de coleta e checkpoints                                                                                           |
 | Multitenancy             | Identidade do tenant extraída de token verificado; consultas, evidências, sessões, jobs e bridges segregados por tenant                                                       |
 
 Usuários e grupos têm navegação por relações com nomes, membros paginados, SKUs, planos de serviço e detalhes por usuário. As áreas Intune, Azure e Custos permitem investigar configurações e evidências sem perder o tenant da sessão.
 
 O catálogo de fontes está em [`src/sources.js`](src/sources.js). Fontes Graph têm retomada por cursor, inclusive coletas por grupo/aplicação/site; o snapshot só retira relações não observadas após completar o ciclo. Consulte [cobertura e limites](docs/COVERAGE.md).
+
+## Novidades da v0.4
+
+- **Comparação visual antes/depois:** campos adicionados, removidos e alterados, com paginação e evidência. Disponível para Auditor/Admin. Autor e ocorrência desconhecidos permanecem explícitos.
+- **Alcance Intune:** destinos configurados, estimativa local por dispositivo e relatórios declarados pelo Intune em seções separadas. Inclusões, exclusões, filtros, grupos aninhados e lacunas são explicados por máquina.
+- **Diagnóstico de conexão:** estado por fonte e serviço, permissões exigidas, dados antigos, lacunas e ações sugeridas. Admin pode enfileirar coletas representativas de leitura; a demonstração nunca testa permissões reais.
+
+Veja [funcionamento, limites e roteiro de homologação](docs/INSIGHTS.md).
 
 ## Exemplos de investigação
 

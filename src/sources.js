@@ -10,6 +10,28 @@ const s = (id, name, service, type, permission, path, extra = {}) => ({
   ...extra,
 });
 export const SOURCES = [
+  ...[
+    ["compliance", "Conformidade", "deviceCompliancePolicies"],
+    ["configuration", "Configuração clássica", "deviceConfigurations"],
+  ].map(([family, name, collection]) =>
+    s(
+      `intune.${family}.deployment`,
+      name + " · resultados por dispositivo",
+      "Intune",
+      "snapshot",
+      "DeviceManagementConfiguration.Read.All",
+      null,
+      {
+        family,
+        deployment: true,
+        fanout: `deviceManagement/${collection}`,
+        parentPath: `deviceManagement/${collection}?$select=id`,
+        relations: ["deviceStatuses"],
+        limitation:
+          "Relatório declarado pelo Intune. Nome de dispositivo não comprova uma correlação única com o inventário. Disponível para políticas clássicas desta família.",
+      },
+    ),
+  ),
   ...intuneSources,
   s(
     "entra.licenseDetails",

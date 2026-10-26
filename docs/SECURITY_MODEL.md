@@ -28,3 +28,9 @@ A evidência JSON normalizada preserva os valores que o parser recebeu; não é 
 - Restrinja exposição de auditoria e exportações: UPN/IP/caminhos de arquivo podem ser dados pessoais/sensíveis de negócio.
 - Self-onboarding exige Admin token-validado; configure `ALLOW_SELF_ONBOARDING=false` quando a plataforma precisar de aprovação comercial/operacional prévia.
 - Proxies reversos só devem ser confiados na quantidade e rede reais; não exponha caminhos alternativos que contornem o gateway.
+
+## Consultas da v0.4
+
+Comparações de payloads históricos exigem Auditor/Admin, assim como o acesso a evidências originais. Os endpoints de histórico, alcance, relatórios e diagnóstico filtram o tenant da sessão verificada. A solicitação de diagnóstico exige Admin, origem e CSRF válidos, aceita somente um serviço da lista fixa e enfileira apenas fontes habilitadas em uma transação com ledger. O endpoint não aceita tenant, URL de provedor, credenciais nem código enviados pelo cliente.
+
+O avaliador de filtros é um parser limitado, sem eval, Function, execução de scripts ou expressões regulares fornecidas pelo usuário. Valores ausentes, propriedades não mapeadas e sintaxe não suportada permanecem desconhecidos, inclusive sob negação. A tela não transforma escopo estimado em autorização efetiva ou implantação confirmada. Diagnóstico nunca retorna valores de segredos/certificados, apenas indicadores de configuração e resultados de coleta.

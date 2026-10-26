@@ -8,6 +8,10 @@ import {
   queueSource,
 } from "../src/store.js";
 import { processOne } from "../src/worker.js";
+import { seedDemo, DEMO_TENANTS } from "../src/seed.js";
+import { resourceHistory } from "../src/changes.js";
+import { policyReach } from "../src/intune-reach.js";
+import { connectionDiagnostics } from "../src/diagnostics.js";
 const connection = process.env.TEST_DATABASE_URL;
 if (!connection)
   throw new Error(
@@ -50,9 +54,33 @@ try {
     "PostgreSQL fixture",
   );
   assert.equal((await verifyLedger(pool, tenant)).valid, true);
+  await seedDemo(pool);
+  const fixtureTenant = DEMO_TENANTS[0].id;
+  const history = await resourceHistory(
+    pool,
+    fixtureTenant,
+    "intune:catalog:catalog-001",
+  );
+  assert.equal(history.items.length, 2);
+  const reach = await policyReach(
+    pool,
+    fixtureTenant,
+    "intune:catalog:catalog-001",
+  );
+  assert.equal(reach.complete, true);
+  assert.equal(reach.items.length, 4);
+  assert.ok(reach.items.some((d) => d.outcome === "estimated_excluded"));
+  const reports = await policyReach(
+    pool,
+    fixtureTenant,
+    "intune-policy:config-01",
+  );
+  assert.equal(reports.reports.length, 2);
+  const diagnostics = await connectionDiagnostics(pool, fixtureTenant, config);
+  assert.ok(diagnostics.services.length > 0);
   await assert.rejects(() => pool.query("DELETE FROM evidence"));
   console.log(
-    "PostgreSQL 17: migração, coleta, persistência e proteção de evidências verificadas.",
+    "PostgreSQL 17: migração, coleta, histórico, alcance Intune, relatórios, diagnóstico e proteção de evidências verificados.",
   );
 } finally {
   await pool.end();
